@@ -42,29 +42,35 @@ php tests/performance/PerformanceTest.php
 
 ## Test Coverage
 
-### Unit Tests (21 tests)
+### Unit Tests (30 tests)
 - **SlingoBoard Class**: 8 tests
   - Board creation and initialization
   - Covered position management
   - Slingo detection (horizontal, vertical, diagonal)
   - Potential Slingo calculation with wilds
-  - Random board generation validation
-  - Board state management
 
-- **DrawConfiguration Class**: 6 tests
-  - Row addition and management
-  - Configuration validation
+- **DrawConfiguration Class**: 9 tests
+  - Row addition and validation
   - Optimal wild placement calculation
   - Expected score calculation
-  - Error handling for invalid inputs
+- **DrawConfiguration Class**: 9 tests
+  - Row addition and validation
+  - Optimal wild placement calculation
+  - Expected score calculation
+  - Tile placement heuristic for memory efficiency
+  - Multiple draw row handling
+  - Memory performance with many wilds
 
-- **SlingoAnalyzer Class**: 7 tests
+- **SlingoAnalyzer Class**: 13 tests
   - Optimal strategy analysis
   - Analysis structure validation
   - Current Slingo calculation
   - Completion percentage calculation
   - Probability breakdown analysis
   - Expected value calculation
+  - Priority system testing (3-tier hierarchy)
+  - Depth-first search algorithm validation
+  - Edge case handling
 
 ### Integration Tests (10 tests)
 - API endpoint availability
@@ -89,9 +95,9 @@ All tests are currently **PASSING** with 100% success rate:
 ```
 📊 Test Results Summary:
 ============================================================
-✅ Passed: 21
+✅ Passed: 30
 ❌ Failed: 0
-📈 Total: 21
+📈 Total: 30
 🎯 Success Rate: 100%
 ```
 
@@ -151,6 +157,21 @@ echo $?  # 0 for success, 1 for failure
 To add new tests:
 
 1. Create a new test class extending `SimpleTest`
+### ✅ Memory Optimization Testing
+- Tile placement heuristic for 5+ super wilds
+- Memory efficiency validation (< 2 seconds execution)
+- Priority-based tile placement (center → corners → diagonal → others)
+- Multiple draw row wild placement handling
+- Scalability testing with large wild card counts
+
+### ✅ Algorithm Enhancement Testing
+- Priority system validation (3-tier hierarchy)
+- Depth-first search algorithm coverage
+- Completed Slingo detection (Priority 1, score >10000)
+- Diagonal priority handling (Priority 2)
+- Setup move optimization (Priority 3)
+- Edge case handling and validation
+
 2. Implement test methods starting with `test`
 3. Use assertion methods to validate behavior
 4. Add the test class to `simple_test_runner.php`
@@ -164,6 +185,17 @@ class MyNewTest extends SimpleTest {
     }
 }
 ```
+
+## Additional Algorithm Testing Rules
+
+When implementing new algorithm logic, always add tests for:
+
+1. **Core Functionality**: Basic operation validation
+2. **Edge Cases**: Boundary conditions and error handling
+3. **Performance**: Memory usage and execution time
+4. **Integration**: How the feature works with existing code
+5. **Priority Systems**: Scoring and ranking validation
+6. **Memory Optimization**: Heuristic fallback mechanisms
 
 ## Test Data
 

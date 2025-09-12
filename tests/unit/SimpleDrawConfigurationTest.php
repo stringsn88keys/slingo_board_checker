@@ -101,5 +101,92 @@ class SimpleDrawConfigurationTest extends SimpleTest {
             $this->assertGreaterThan(0, $placement['expected_score'], 'Expected score should be positive');
         }
     }
+    
+    /**
+     * Test Tile Placement Heuristic: Used when 5 super wilds to avoid memory issues
+     */
+    public function testTilePlacementHeuristic() {
+        $config = new DrawConfiguration();
+        $config->addRow(['super_wild', 'super_wild', 'super_wild', 'super_wild', 'super_wild']);
+        
+        $this->board->setCoveredPositions([[2, 2]]); // Cover center to test priority
+        
+        $placements = $config->getOptimalWildPlacements($this->board);
+        
+        $this->assertNotEmpty($placements, 'Should handle 5 super wilds with heuristic');
+        
+        if (!empty($placements)) {
+            $placement = $placements[0];
+            $this->assertStringContains('using tile heuristic', $placement['reasoning'], 
+                'Should indicate tile heuristic was used');
+            $this->assertCount(5, $placement['super_wild_placements'], 
+                'Should place all 5 super wilds');
+            
+            // Should prioritize corners since center is covered
+            $positions = [];
+            foreach ($placement['super_wild_placements'] as $superWild) {
+                $positions[] = [$superWild['row'] - 1, $superWild['column'] - 1]; // Convert to 0-indexed
+            }
+            
+            // Check that at least some corners are used
+            $corners = [[0,0], [0,4], [4,0], [4,4]];
+            $cornerCount = 0;
+            foreach ($positions as $pos) {
+                if (in_array($pos, $corners)) {
+                    $cornerCount++;
+                }
+            }
+            
+            $this->assertGreaterThan(0, $cornerCount, 'Should prioritize corner positions');
+        }
+    }
+    
+    /**
+     * Test Multiple Draw Rows with Wilds
+     */
+    public function testMultipleDrawRowsWithWilds() {
+        $config = new DrawConfiguration();
+        $config->addRow(['super_wild', 'wild', 'none', 'none', 'none']);        // Row 1
+        $config->addRow(['none', 'super_wild', 'wild', 'none', 'none']);        // Row 2
+        $config->addRow(['super_wild', 'none', 'super_wild', 'wild', 'none']);  // Row 3
+        
+        $this->board->setCoveredPositions([[0, 0], [1, 1], [2, 2]]);
+        
+        $placements = $config->getOptimalWildPlacements($this->board);
+        
+        $this->assertCount(3, $placements, 'Should have one recommendation per draw row');
+        
+        // Each recommendation should have proper structure
+        foreach ($placements as $i => $placement) {
+            $this->assertEquals($i + 1, $placement['row'], "Placement should be for row " . ($i + 1));
+            $this->assertIsNumeric($placement['expected_score'], 'Should have numeric expected score');
+            $this->assertIsString($placement['reasoning'], 'Should have string reasoning');
+        }
+    }
+    
+    /**
+     * Test Memory Efficiency: 5 super wilds should not cause memory exhaustion
+     */
+    public function testMemoryEfficiencyWithManyWilds() {
+        $config = new DrawConfiguration();
+        $config->addRow(['super_wild', 'super_wild', 'super_wild', 'super_wild', 'super_wild']);
+        
+        $this->board->setCoveredPositions([[0, 0]]);
+        
+        // This should complete quickly without memory issues
+        $startTime = microtime(true);
+        $placements = $config->getOptimalWildPlacements($this->board);
+        $endTime = microtime(true);
+        
+        $executionTime = $endTime - $startTime;
+        
+        $this->assertNotEmpty($placements, 'Should generate placements');
+        $this->assertLessThan(2.0, $executionTime, 'Should complete quickly (under 2 seconds)');
+        
+        if (!empty($placements)) {
+            $this->assertStringContains('using tile heuristic', $placements[0]['reasoning'], 
+                'Should use tile heuristic for efficiency');
+        }
+    }
 }
 ?>

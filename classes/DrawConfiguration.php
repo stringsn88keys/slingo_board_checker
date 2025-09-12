@@ -88,6 +88,15 @@ class DrawConfiguration {
             return null;
         }
         
+        // Count total super wilds in this specific draw row
+        $totalSuperWilds = count($superWildPositions);
+        
+        // If 5 super wilds (the maximum for a single row), use tile placement priority heuristic 
+        // instead of DFS to avoid memory exhaustion from combinatorial explosion
+        if ($totalSuperWilds >= 5) {
+            return $this->calculateOptimalPlacementWithTileHeuristic($board, $wildPositions, $superWildPositions);
+        }
+        
         $bestResult = null;
         $bestScore = -1;
         
@@ -115,6 +124,147 @@ class DrawConfiguration {
         }
         
         return null;
+    }
+    
+    /**
+     * Calculate optimal placement using tile priority heuristic for many super wilds
+     * Priority: Center -> Corners -> Other diagonal positions
+     */
+    private function calculateOptimalPlacementWithTileHeuristic($board, $wildPositions, $superWildPositions) {
+        $wildPlacements = [];
+        $superWildPlacements = [];
+        
+        // First, place wilds in their required columns
+        foreach ($wildPositions as $wildCol) {
+            $bestRow = $this->findBestRowForWildWithHeuristic($board, $wildCol);
+            if ($bestRow !== null) {
+                $wildPlacements[] = ['row' => $bestRow + 1, 'column' => $wildCol + 1];
+            }
+        }
+        
+        // Then place super wilds using tile priority heuristic
+        $uncoveredPositions = $this->getUncoveredPositions($board);
+        
+        // Remove positions already taken by wilds
+        $availablePositions = [];
+        foreach ($uncoveredPositions as $pos) {
+            $isTaken = false;
+            foreach ($wildPlacements as $wildPlace) {
+                if ($wildPlace['row'] - 1 === $pos['row'] && $wildPlace['column'] - 1 === $pos['col']) {
+                    $isTaken = true;
+                    break;
+                }
+            }
+            if (!$isTaken) {
+                $availablePositions[] = $pos;
+            }
+        }
+        
+        // Sort positions by tile priority heuristic
+        $prioritizedPositions = $this->sortPositionsByTilePriority($availablePositions);
+        
+        // Place super wilds in order of priority
+        $superWildCount = count($superWildPositions);
+        for ($i = 0; $i < $superWildCount && $i < count($prioritizedPositions); $i++) {
+            $pos = $prioritizedPositions[$i];
+            $superWildPlacements[] = ['row' => $pos['row'] + 1, 'column' => $pos['col'] + 1];
+        }
+        
+        // Calculate score using the same priority system
+        $combination = [
+            'wild_placements' => $wildPlacements,
+            'super_wild_placements' => $superWildPlacements
+        ];
+        
+        $score = $this->evaluatePlacementWithPriority($board, $combination);
+        
+        return [
+            'positions' => $this->convertPlacementsToPositions($wildPositions, $superWildPositions),
+            'expected_score' => round($score, 1),
+            'reasoning' => $this->generateReasoningWithPlacements($board, $wildPlacements, $superWildPlacements) . " (using tile heuristic)",
+            'wild_placements' => $wildPlacements,
+            'super_wild_placements' => $superWildPlacements
+        ];
+    }
+    
+    /**
+     * Sort positions by tile priority: Center -> Corners -> Other diagonal positions -> Others
+     */
+    private function sortPositionsByTilePriority($positions) {
+        $prioritized = [];
+        
+        // Priority 1: Center (2,2)
+        foreach ($positions as $pos) {
+            if ($pos['row'] === 2 && $pos['col'] === 2) {
+                $prioritized[] = $pos;
+                break;
+            }
+        }
+        
+        // Priority 2: Corners (0,0), (0,4), (4,0), (4,4)
+        $corners = [[0,0], [0,4], [4,0], [4,4]];
+        foreach ($corners as $corner) {
+            foreach ($positions as $pos) {
+                if ($pos['row'] === $corner[0] && $pos['col'] === $corner[1]) {
+                    $prioritized[] = $pos;
+                    break;
+                }
+            }
+        }
+        
+        // Priority 3: Other diagonal positions (1,1), (3,3), (1,3), (3,1)
+        $diagonalPositions = [[1,1], [3,3], [1,3], [3,1]];
+        foreach ($diagonalPositions as $diagPos) {
+            foreach ($positions as $pos) {
+                if ($pos['row'] === $diagPos[0] && $pos['col'] === $diagPos[1]) {
+                    $prioritized[] = $pos;
+                    break;
+                }
+            }
+        }
+        
+        // Priority 4: All remaining positions
+        foreach ($positions as $pos) {
+            $alreadyAdded = false;
+            foreach ($prioritized as $prioPos) {
+                if ($prioPos['row'] === $pos['row'] && $prioPos['col'] === $pos['col']) {
+                    $alreadyAdded = true;
+                    break;
+                }
+            }
+            if (!$alreadyAdded) {
+                $prioritized[] = $pos;
+            }
+        }
+        
+        return $prioritized;
+    }
+    
+    /**
+     * Find best row for wild using simple heuristic (highest coverage in that column)
+     */
+    private function findBestRowForWildWithHeuristic($board, $wildCol) {
+        $bestRow = null;
+        $bestScore = -1;
+        
+        for ($row = 0; $row < 5; $row++) {
+            if (!$board->isCovered($row, $wildCol)) {
+                // Simple heuristic: prefer rows with more coverage
+                $rowCoverage = 0;
+                for ($col = 0; $col < 5; $col++) {
+                    if ($board->isCovered($row, $col)) {
+                        $rowCoverage++;
+                    }
+                }
+                
+                if ($rowCoverage > $bestScore) {
+                    $bestScore = $rowCoverage;
+                    $bestRow = $row;
+                }
+            }
+        }
+        
+        return $bestRow;
     }
     
     /**

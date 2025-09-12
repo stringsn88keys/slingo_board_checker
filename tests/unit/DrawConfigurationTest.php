@@ -369,4 +369,97 @@ class DrawConfigurationTest extends PHPUnit\Framework\TestCase {
         $this->assertEquals(1, $placements[0]['row'], 'First placement should be for row 1');
         $this->assertEquals(2, $placements[1]['row'], 'Second placement should be for row 2');
     }
+    
+    /**
+     * Test Tile Placement Heuristic: Used when 5+ super wilds to avoid memory issues
+     */
+    public function testTilePlacementHeuristic() {
+        $config = new DrawConfiguration();
+        $config->addRow(['super_wild', 'super_wild', 'super_wild', 'super_wild', 'super_wild']);
+        
+        $this->board->setCoveredPositions([[2, 2]]); // Cover center to test priority
+        
+        $placements = $config->getOptimalWildPlacements($this->board);
+        
+        $this->assertNotEmpty($placements, 'Should handle 5 super wilds with heuristic');
+        
+        $placement = $placements[0];
+        $this->assertStringContains('using tile heuristic', $placement['reasoning'], 
+            'Should indicate tile heuristic was used');
+        $this->assertCount(5, $placement['super_wild_placements'], 
+            'Should place all 5 super wilds');
+        
+        // Should prioritize corners since center is covered
+        $positions = [];
+        foreach ($placement['super_wild_placements'] as $superWild) {
+            $positions[] = [$superWild['row'] - 1, $superWild['column'] - 1]; // Convert to 0-indexed
+        }
+        
+        // Corners should be prioritized: [0,0], [0,4], [4,0], [4,4]
+        $corners = [[0,0], [0,4], [4,0], [4,4]];
+        $cornerCount = 0;
+        foreach ($positions as $pos) {
+            if (in_array($pos, $corners)) {
+                $cornerCount++;
+            }
+        }
+        
+        $this->assertGreaterThan(0, $cornerCount, 'Should prioritize corner positions');
+    }
+    
+    /**
+     * Test Tile Priority Order: Center -> Corners -> Diagonal -> Others
+     */
+    public function testTilePriorityOrder() {
+        $config = new DrawConfiguration();
+        
+        // Use reflection to test the private sorting method
+        $reflection = new ReflectionClass($config);
+        $sortMethod = $reflection->getMethod('sortPositionsByTilePriority');
+        $sortMethod->setAccessible(true);
+        
+        // Create test positions in random order
+        $testPositions = [
+            ['row' => 1, 'col' => 2], // Random position
+            ['row' => 0, 'col' => 0], // Corner
+            ['row' => 2, 'col' => 2], // Center
+            ['row' => 1, 'col' => 1], // Diagonal
+            ['row' => 4, 'col' => 4], // Corner
+        ];
+        
+        $sorted = $sortMethod->invoke($config, $testPositions);
+        
+        // Center should be first
+        $this->assertEquals(2, $sorted[0]['row'], 'Center should be first priority');
+        $this->assertEquals(2, $sorted[0]['col'], 'Center should be first priority');
+        
+        // Corners should come next
+        $this->assertTrue(
+            ($sorted[1]['row'] === 0 && $sorted[1]['col'] === 0) ||
+            ($sorted[1]['row'] === 4 && $sorted[1]['col'] === 4),
+            'Corners should have high priority'
+        );
+    }
+    
+    /**
+     * Test Mixed Wilds and Super Wilds with Heuristic
+     */
+    public function testMixedWildsWithHeuristic() {
+        $config = new DrawConfiguration();
+        $config->addRow(['wild', 'super_wild', 'super_wild', 'super_wild', 'super_wild']); // 1 wild + 4 super wilds = 5 total
+        
+        $this->board->setCoveredPositions([[0, 0]]);
+        
+        $placements = $config->getOptimalWildPlacements($this->board);
+        
+        $this->assertNotEmpty($placements, 'Should handle mixed wilds with heuristic');
+        
+        $placement = $placements[0];
+        $this->assertNotEmpty($placement['wild_placements'], 'Should place wild');
+        $this->assertCount(4, $placement['super_wild_placements'], 'Should place 4 super wilds');
+        
+        // Wild should be in column 1 (0-indexed: column 0)
+        $this->assertEquals(1, $placement['wild_placements'][0]['column'], 
+            'Wild should be in its designated column');
+    }
 }

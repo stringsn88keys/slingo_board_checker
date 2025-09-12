@@ -39,7 +39,10 @@ $testClasses = [
         'testValidationEmptyRows',
         'testValidationTooManyRows',
         'testOptimalWildPlacements',
-        'testExpectedScoreCalculation'
+        'testExpectedScoreCalculation',
+        'testTilePlacementHeuristic',
+        'testMultipleDrawRowsWithWilds',
+        'testMemoryEfficiencyWithManyWilds'
     ],
     'SimpleSlingoAnalyzerTest' => [
         'testAnalyzeOptimalStrategy',
