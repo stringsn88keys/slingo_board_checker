@@ -2,28 +2,28 @@
     "name": "slingo/board-checker",
     "description": "A PHP web application for Slingo board analysis and optimization",
     "type": "project",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Thomas Powell",
+            "role": "Developer"
+        }
+    ],
+    "keywords": ["slingo", "game", "strategy", "optimization", "php", "web-app"],
+    "homepage": "https://github.com/stringsn88keys/slingo_board_checker",
     "require": {
         "php": ">=7.4"
-    },
-    "require-dev": {
-        "phpunit/phpunit": "^9.5"
     },
     "autoload": {
         "psr-4": {
             "Slingo\\": "classes/"
         }
     },
-    "autoload-dev": {
-        "psr-4": {
-            "Slingo\\Tests\\": "tests/"
-        }
-    },
     "scripts": {
-        "test": "phpunit",
-        "test-unit": "phpunit --testsuite=Unit",
-        "test-integration": "phpunit --testsuite=Integration",
-        "test-performance": "phpunit --testsuite=Performance",
-        "test-coverage": "phpunit --coverage-html coverage"
+        "test": "php tests/simple_test_runner.php",
+        "test-manual": "php tests/manual/run_manual_tests.php",
+        "syntax-check": "find . -name '*.php' -not -path './vendor/*' -exec php -l {} \\;",
+        "serve": "php -S localhost:8000 -t ."
     },
     "config": {
         "optimize-autoloader": true,

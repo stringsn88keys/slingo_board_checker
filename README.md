@@ -69,8 +69,105 @@ slingo_board_checker/
 │   └── slingo.css         # Styling
 ├── config/
 │   └── config.php         # Configuration settings
+├── tests/                 # Test suite
+│   ├── bootstrap.php      # Test bootstrapping
+│   ├── simple_test_runner.php # Main test runner
+│   ├── unit/              # Unit tests
+│   ├── integration/       # Integration tests
+│   ├── performance/       # Performance tests
+│   └── manual/            # Manual/exploratory tests
 └── README.md              # This file
 ```
+
+## Testing
+
+The project includes a comprehensive test suite:
+
+### Running Tests
+
+**Automated Test Suite**:
+```bash
+# Run all automated tests
+php tests/simple_test_runner.php
+# OR using composer
+composer run test
+
+# Run specific test categories
+php tests/unit/SlingoBoardTest.php
+php tests/integration/ApiTest.php
+php tests/performance/PerformanceTest.php
+```
+
+**Manual Test Suite**:
+```bash
+# Run all manual tests (for development/debugging)
+php tests/manual/run_manual_tests.php
+# OR using composer
+composer run test-manual
+
+# Run individual manual tests
+php tests/manual/multiple_draw_rows_test.php
+php tests/manual/api_multiple_rows_test.php
+```
+
+**Development Tools**:
+```bash
+# Check PHP syntax of all files
+composer run syntax-check
+
+# Start development server
+composer run serve
+# Then visit http://localhost:8000
+```
+
+### Test Structure
+
+- **Unit Tests** (`tests/unit/`): Test individual classes and methods
+- **Integration Tests** (`tests/integration/`): Test API endpoints and component interaction
+- **Performance Tests** (`tests/performance/`): Validate execution speed and memory usage
+- **Manual Tests** (`tests/manual/`): Exploratory tests for specific scenarios and debugging
+
+The automated test suite validates core functionality, while manual tests provide detailed output for debugging complex scenarios like multi-row wild placement strategies.
+
+## Continuous Integration
+
+The project includes GitHub Actions workflows for automated testing:
+
+### CI Workflows
+
+- **Main CI** (`.github/workflows/ci.yml`): Fast feedback with PHP 8.1
+- **Full Test Suite** (`.github/workflows/tests.yml`): Comprehensive testing across PHP versions 7.4-8.3
+- **Quick Tests** (`.github/workflows/quick-tests.yml`): Basic validation for rapid iteration
+
+### What Gets Tested
+
+- **PHP Syntax Check**: Validates all PHP files for syntax errors
+- **Automated Test Suite**: Runs all unit, integration, and performance tests
+- **Manual Test Validation**: Ensures manual tests can execute without errors
+- **Application Startup**: Verifies the web application can start and serve requests
+- **API Endpoint Testing**: Validates that the analyze.php endpoint responds correctly
+
+### Running Locally
+
+Before pushing changes, run the same checks locally:
+
+```bash
+# Using composer scripts (recommended)
+composer run syntax-check  # Check PHP syntax
+composer run test          # Run automated tests
+composer run test-manual   # Validate manual tests
+composer run serve         # Start development server
+
+# Or using direct commands
+find . -name "*.php" -not -path "./vendor/*" -exec php -l {} \;
+php tests/simple_test_runner.php
+php tests/manual/run_manual_tests.php
+php -S localhost:8000 -t .
+```
+
+### CI Status
+
+[![CI](https://github.com/stringsn88keys/slingo_board_checker/workflows/CI/badge.svg)](https://github.com/stringsn88keys/slingo_board_checker/actions)
 
 ## API Endpoints
 

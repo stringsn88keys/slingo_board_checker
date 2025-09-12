@@ -1,0 +1,196 @@
+name: PHP Tests
+
+on:
+  push:
+    branches: [ main, develop, simplify-heuristic ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        php-version: ['7.4', '8.0', '8.1', '8.2', '8.3']
+      fail-fast: false
+        
+    name: PHP ${{ matrix.php-version }} Tests
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ matrix.php-version }}
+        extensions: mbstring, json
+        coverage: xdebug
+        
+    - name: Validate composer.json
+      run: |
+        echo "Validating composer.json..."
+        composer validate --no-check-publish
+        echo "Composer validation completed"
+      
+    - name: Cache Composer packages
+      id: composer-cache
+      uses: actions/cache@v3
+      with:
+        path: vendor
+        key: ${{ runner.os }}-php-${{ matrix.php-version }}-${{ hashFiles('**/composer.json') }}
+        restore-keys: |
+          ${{ runner.os }}-php-${{ matrix.php-version }}-
+          
+    - name: Install dependencies
+      run: |
+        if [ -f composer.json ]; then
+          composer install --prefer-dist --no-progress --no-interaction --optimize-autoloader
+        else
+          echo "No composer.json found, skipping dependency installation"
+        fi
+      
+    - name: Run PHP syntax check
+      run: |
+        if [ -f composer.json ]; then
+          composer run syntax-check
+        else
+          find . -name "*.php" -not -path "./vendor/*" | xargs -I {} php -l {}
+        fi
+      
+    - name: Run automated test suite
+      run: |
+        echo "Running automated test suite..."
+        if [ -f composer.json ]; then
+          composer run test
+        else
+          php tests/simple_test_runner.php
+        fi
+        echo "Automated tests completed successfully"
+      
+    - name: Run manual tests (validation only)
+      run: |
+        echo "Running manual tests for validation..."
+        if [ -f composer.json ]; then
+          composer run test-manual
+        else
+          php tests/manual/run_manual_tests.php
+        fi
+        echo "Manual tests validation completed"
+      continue-on-error: true
+      
+    - name: Check for PHP errors in logs
+      run: |
+        if [ -f /tmp/php_errors.log ]; then
+          echo "PHP errors found:"
+          cat /tmp/php_errors.log
+          exit 1
+        fi
+
+  code-quality:
+    runs-on: ubuntu-latest
+    name: Code Quality Checks
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.1'
+        extensions: mbstring, json
+        tools: phpcs, phpstan
+        
+    - name: Install dependencies
+      run: |
+        if [ -f composer.json ]; then
+          composer install --prefer-dist --no-progress --no-interaction
+        else
+          echo "No composer.json found, skipping dependency installation"
+        fi
+      
+    - name: Check code style (if phpcs config exists)
+      run: |
+        if [ -f phpcs.xml ] || [ -f phpcs.xml.dist ]; then
+          phpcs --standard=PSR12 --ignore=vendor/ .
+        else
+          echo "No phpcs configuration found, skipping code style check"
+        fi
+      continue-on-error: true
+      
+    - name: Run static analysis (if phpstan config exists)
+      run: |
+        if [ -f phpstan.neon ] || [ -f phpstan.neon.dist ]; then
+          phpstan analyse
+        else
+          echo "No phpstan configuration found, skipping static analysis"
+        fi
+      continue-on-error: true
+
+  security:
+    runs-on: ubuntu-latest
+    name: Security Scan
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.1'
+        extensions: mbstring, json
+        
+    - name: Install dependencies
+      run: |
+        if [ -f composer.json ]; then
+          composer install --prefer-dist --no-progress --no-interaction
+        else
+          echo "No composer.json found, skipping dependency installation"
+        fi
+      
+    - name: Run security checker
+      uses: symfonycorp/security-checker-action@v5
+      continue-on-error: true
+
+  deployment-test:
+    runs-on: ubuntu-latest
+    name: Deployment Simulation
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.1'
+        extensions: mbstring, json
+        
+    - name: Install dependencies
+      run: |
+        if [ -f composer.json ]; then
+          composer install --prefer-dist --no-progress --no-interaction
+        else
+          echo "No composer.json found, skipping dependency installation"
+        fi
+      
+    - name: Start PHP built-in server
+      run: php -S localhost:8000 -t . &
+      
+    - name: Wait for server to start
+      run: sleep 5
+      
+    - name: Test main page accessibility
+      run: |
+        curl -f http://localhost:8000/index.php || exit 1
+        echo "Main page is accessible"
+        
+    - name: Test API endpoint
+      run: |
+        curl -X POST -H "Content-Type: application/json" \
+          -d '{"board_state":{"covered_positions":[[0,0]],"board_numbers":[[1,16,31,46,61],[2,17,32,47,62],[3,18,33,48,63],[4,19,34,49,64],[5,20,35,50,65]]},"draws":[{"row":1,"positions":["wild","none","none","none","none"]}]}' \
+          http://localhost:8000/api/analyze.php || exit 1
+        echo "API endpoint is accessible"

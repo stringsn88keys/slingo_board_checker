@@ -188,5 +188,103 @@ class SimpleDrawConfigurationTest extends SimpleTest {
                 'Should use tile heuristic for efficiency');
         }
     }
+    
+    public function testStrategicWildPlacement() {
+        // Create a board where row 0 has 4 covered positions (1 away from completion)
+        $testNumbers = [
+            [1, 16, 31, 46, 61],
+            [2, 17, 32, 47, 62],
+            [3, 18, 33, 48, 63],
+            [4, 19, 34, 49, 64],
+            [5, 20, 35, 50, 65]
+        ];
+        $strategicBoard = new SlingoBoard($testNumbers);
+        $strategicBoard->setCoveredPositions([[0,0], [0,1], [0,2], [0,3]]); // Row 0 needs only position [0,4]
+        
+        $config = new DrawConfiguration();
+        $config->addRow(['none', 'none', 'none', 'none', 'super_wild']); // Super wild in column 4
+        
+        $placements = $config->getOptimalWildPlacements($strategicBoard);
+        
+        $this->assertCount(1, $placements, 'Should have one placement recommendation');
+        $this->assertGreaterThan(50000, $placements[0]['expected_score'], 'Should prioritize proximity to completion (>50000)');
+        $this->assertStringContains('complet', strtolower($placements[0]['reasoning']), 'Reasoning should mention completion priority');
+        
+        // The super wild should be placed at [0,4] to complete the row
+        $superWildPlacements = $placements[0]['super_wild_placements'];
+        $this->assertCount(1, $superWildPlacements, 'Should place the super wild');
+        $this->assertEquals(1, $superWildPlacements[0]['row'], 'Should be in row 1 (0-indexed becomes 1-indexed)');
+        $this->assertEquals(5, $superWildPlacements[0]['column'], 'Should be in column 5 (0-indexed becomes 1-indexed)');
+    }
+    
+    public function testDiagonalPriorityStrategy() {
+        // Create a board where the main diagonal has 4 covered positions
+        $testNumbers = [
+            [1, 16, 31, 46, 61],
+            [2, 17, 32, 47, 62],
+            [3, 18, 33, 48, 63],
+            [4, 19, 34, 49, 64],
+            [5, 20, 35, 50, 65]
+        ];
+        $diagonalBoard = new SlingoBoard($testNumbers);
+        $diagonalBoard->setCoveredPositions([[0,0], [1,1], [2,2], [3,3]]); // Main diagonal missing [4,4]
+        
+        $config = new DrawConfiguration();
+        $config->addRow(['none', 'none', 'none', 'none', 'super_wild']); // Super wild in column 4
+        
+        $placements = $config->getOptimalWildPlacements($diagonalBoard);
+        
+        $this->assertCount(1, $placements, 'Should have one placement recommendation');
+        // Diagonal completion should get extra bonus (60000 base + completion bonus)
+        $this->assertGreaterThan(60000, $placements[0]['expected_score'], 'Should prioritize diagonal completion with extra bonus');
+        
+        $superWildPlacements = $placements[0]['super_wild_placements'];
+        $this->assertEquals(5, $superWildPlacements[0]['row'], 'Should complete diagonal at row 5');
+        $this->assertEquals(5, $superWildPlacements[0]['column'], 'Should complete diagonal at column 5');
+    }
+    
+    public function testAvoidLowValuePlacements() {
+        // Create a board where edge positions have poor strategic value
+        $testNumbers = [
+            [1, 16, 31, 46, 61],
+            [2, 17, 32, 47, 62],
+            [3, 18, 33, 48, 63],
+            [4, 19, 34, 49, 64],
+            [5, 20, 35, 50, 65]
+        ];
+        $poorValueBoard = new SlingoBoard($testNumbers);
+        $poorValueBoard->setCoveredPositions([[0,1]]); // Only one position covered in row 0 (edge row)
+        
+        $config = new DrawConfiguration();
+        $config->addRow(['super_wild', 'none', 'super_wild', 'none', 'none']); // Two super wilds: one in edge, one in center column
+        
+        $placements = $config->getOptimalWildPlacements($poorValueBoard);
+        
+        $this->assertCount(1, $placements, 'Should have one placement recommendation');
+        
+        $superWildPlacements = $placements[0]['super_wild_placements'];
+        $this->assertCount(2, $superWildPlacements, 'Should place both super wilds');
+        
+        // The center column (2) should be prioritized over edge column (0)
+        $centerPlacement = null;
+        $edgePlacement = null;
+        
+        foreach ($superWildPlacements as $placement) {
+            if ($placement['column'] === 3) { // Column 2 (0-indexed) becomes 3 (1-indexed)
+                $centerPlacement = $placement;
+            } elseif ($placement['column'] === 1) { // Column 0 (0-indexed) becomes 1 (1-indexed)
+                $edgePlacement = $placement;
+            }
+        }
+        
+        $this->assertTrue($centerPlacement !== null, 'Should place a super wild in center column');
+        $this->assertTrue($edgePlacement !== null, 'Should place a super wild in edge column');
+        
+        // Center should be positioned better (likely in middle rows for compound value)
+        $this->assertTrue(
+            ($centerPlacement['row'] >= 2 && $centerPlacement['row'] <= 4), 
+            'Center column placement should favor middle positions for compound value'
+        );
+    }
 }
 ?>
