@@ -89,6 +89,8 @@ The project includes a comprehensive test suite:
 ```bash
 # Run all automated tests
 php tests/simple_test_runner.php
+# OR using composer
+composer run test
 
 # Run specific test categories
 php tests/unit/SlingoBoardTest.php
@@ -100,10 +102,22 @@ php tests/performance/PerformanceTest.php
 ```bash
 # Run all manual tests (for development/debugging)
 php tests/manual/run_manual_tests.php
+# OR using composer
+composer run test-manual
 
 # Run individual manual tests
 php tests/manual/multiple_draw_rows_test.php
 php tests/manual/api_multiple_rows_test.php
+```
+
+**Development Tools**:
+```bash
+# Check PHP syntax of all files
+composer run syntax-check
+
+# Start development server
+composer run serve
+# Then visit http://localhost:8000
 ```
 
 ### Test Structure
@@ -138,16 +152,16 @@ The project includes GitHub Actions workflows for automated testing:
 Before pushing changes, run the same checks locally:
 
 ```bash
-# Syntax check
+# Using composer scripts (recommended)
+composer run syntax-check  # Check PHP syntax
+composer run test          # Run automated tests
+composer run test-manual   # Validate manual tests
+composer run serve         # Start development server
+
+# Or using direct commands
 find . -name "*.php" -not -path "./vendor/*" -exec php -l {} \;
-
-# Run test suite
 php tests/simple_test_runner.php
-
-# Test manual tests
 php tests/manual/run_manual_tests.php
-
-# Start local server for testing
 php -S localhost:8000 -t .
 ```
 

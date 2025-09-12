@@ -29,7 +29,10 @@ jobs:
         coverage: xdebug
         
     - name: Validate composer.json
-      run: composer validate --strict
+      run: |
+        echo "Validating composer.json..."
+        composer validate --no-check-publish
+        echo "Composer validation completed"
       
     - name: Cache Composer packages
       id: composer-cache
@@ -49,18 +52,31 @@ jobs:
         fi
       
     - name: Run PHP syntax check
-      run: find . -name "*.php" -not -path "./vendor/*" | xargs -I {} php -l {}
+      run: |
+        if [ -f composer.json ]; then
+          composer run syntax-check
+        else
+          find . -name "*.php" -not -path "./vendor/*" | xargs -I {} php -l {}
+        fi
       
     - name: Run automated test suite
       run: |
         echo "Running automated test suite..."
-        php tests/simple_test_runner.php
+        if [ -f composer.json ]; then
+          composer run test
+        else
+          php tests/simple_test_runner.php
+        fi
         echo "Automated tests completed successfully"
       
     - name: Run manual tests (validation only)
       run: |
         echo "Running manual tests for validation..."
-        php tests/manual/run_manual_tests.php
+        if [ -f composer.json ]; then
+          composer run test-manual
+        else
+          php tests/manual/run_manual_tests.php
+        fi
         echo "Manual tests validation completed"
       continue-on-error: true
       

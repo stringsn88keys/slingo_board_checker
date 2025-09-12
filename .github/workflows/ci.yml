@@ -42,10 +42,20 @@ jobs:
         fi
       
     - name: Lint PHP files
-      run: find . -name "*.php" -not -path "./vendor/*" -exec php -l {} \;
+      run: |
+        if [ -f composer.json ]; then
+          composer run syntax-check
+        else
+          find . -name "*.php" -not -path "./vendor/*" -exec php -l {} \;
+        fi
       
     - name: Run tests
-      run: php tests/simple_test_runner.php
+      run: |
+        if [ -f composer.json ]; then
+          composer run test
+        else
+          php tests/simple_test_runner.php
+        fi
       
     - name: Test application startup
       run: |
@@ -78,4 +88,9 @@ jobs:
         fi
       
     - name: Test with PHP ${{ matrix.php }}
-      run: php tests/simple_test_runner.php
+      run: |
+        if [ -f composer.json ]; then
+          composer run test
+        else
+          php tests/simple_test_runner.php
+        fi
