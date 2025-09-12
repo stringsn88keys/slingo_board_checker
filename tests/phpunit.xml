@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.5/phpunit.xsd"
+         bootstrap="bootstrap.php"
+         colors="true"
+         stopOnFailure="false"
+         cacheResult="false">
+    
+    <testsuites>
+        <testsuite name="Unit Tests">
+            <directory>unit</directory>
+        </testsuite>
+        <testsuite name="Integration Tests">
+            <directory>integration</directory>
+        </testsuite>
+        <testsuite name="Performance Tests">
+            <directory>performance</directory>
+        </testsuite>
+    </testsuites>
+    
+    <coverage>
+        <include>
+            <directory suffix=".php">../../classes</directory>
+        </include>
+        <exclude>
+            <directory>../../tests</directory>
+            <directory>../../vendor</directory>
+        </exclude>
+        <report>
+            <html outputDirectory="coverage"/>
+            <text outputFile="coverage.txt"/>
+        </report>
+    </coverage>
+    
+    <logging>
+        <junit outputFile="junit.xml"/>
+        <testdoxHtml outputFile="testdox.html"/>
+    </logging>
+    
+    <php>
+        <ini name="memory_limit" value="256M"/>
+        <ini name="max_execution_time" value="300"/>
+    </php>
+</phpunit>

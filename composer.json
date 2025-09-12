@@ -1,0 +1,32 @@
+{
+    "name": "slingo/board-checker",
+    "description": "A PHP web application for Slingo board analysis and optimization",
+    "type": "project",
+    "require": {
+        "php": ">=7.4"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Slingo\\": "classes/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Slingo\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test-unit": "phpunit --testsuite=Unit",
+        "test-integration": "phpunit --testsuite=Integration",
+        "test-performance": "phpunit --testsuite=Performance",
+        "test-coverage": "phpunit --coverage-html coverage"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    }
+}
