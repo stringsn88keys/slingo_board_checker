@@ -161,7 +161,7 @@ class DrawConfiguration {
         }
         
         // Sort positions by tile priority heuristic
-        $prioritizedPositions = $this->sortPositionsByTilePriority($availablePositions);
+        $prioritizedPositions = $this->sortPositionsByTilePriority($availablePositions, $board);
         
         // Place super wilds in order of priority
         $superWildCount = count($superWildPositions);
@@ -188,53 +188,113 @@ class DrawConfiguration {
     }
     
     /**
-     * Sort positions by tile priority: Center -> Corners -> Other diagonal positions -> Others
+     * Sort positions by strategic priority: Completion proximity -> Center/Diagonals -> Others
      */
-    private function sortPositionsByTilePriority($positions) {
+    private function sortPositionsByTilePriority($positions, $board) {
+        // Create a temporary board state to evaluate positions
+        $positionsWithScores = [];
+        
+        foreach ($positions as $pos) {
+            $row = $pos['row'];
+            $col = $pos['col'];
+            $score = 0;
+            
+            // Priority 1: Proximity to completion
+            // Count existing coverage in this row
+            $rowCovered = 0;
+            for ($c = 0; $c < 5; $c++) {
+                if ($board->isCovered($row, $c)) {
+                    $rowCovered++;
+                }
+            }
+            
+            // Count existing coverage in this column
+            $colCovered = 0;
+            for ($r = 0; $r < 5; $r++) {
+                if ($board->isCovered($r, $col)) {
+                    $colCovered++;
+                }
+            }
+            
+            // Prioritize positions that are 1 away from completion
+            if ($rowCovered === 4) {
+                $score += 50000;
+            } elseif ($rowCovered === 3) {
+                $score += 15000;
+            } elseif ($rowCovered === 2) {
+                $score += 3000;
+            }
+            
+            if ($colCovered === 4) {
+                $score += 50000;
+            } elseif ($colCovered === 3) {
+                $score += 15000;
+            } elseif ($colCovered === 2) {
+                $score += 3000;
+            }
+            
+            // Check diagonals
+            if ($row === $col) {
+                $mainDiagCovered = 0;
+                for ($i = 0; $i < 5; $i++) {
+                    if ($board->isCovered($i, $i)) {
+                        $mainDiagCovered++;
+                    }
+                }
+                if ($mainDiagCovered === 4) {
+                    $score += 60000; // Extra bonus for diagonal completion
+                } elseif ($mainDiagCovered === 3) {
+                    $score += 20000;
+                } elseif ($mainDiagCovered === 2) {
+                    $score += 5000;
+                }
+            }
+            
+            if ($row + $col === 4) {
+                $antiDiagCovered = 0;
+                for ($i = 0; $i < 5; $i++) {
+                    if ($board->isCovered($i, 4 - $i)) {
+                        $antiDiagCovered++;
+                    }
+                }
+                if ($antiDiagCovered === 4) {
+                    $score += 60000; // Extra bonus for diagonal completion
+                } elseif ($antiDiagCovered === 3) {
+                    $score += 20000;
+                } elseif ($antiDiagCovered === 2) {
+                    $score += 5000;
+                }
+            }
+            
+            // Priority 2: Center and diagonal compound value
+            if ($row === 2 && $col === 2) {
+                $score += 8000; // Center - contributes to 4 lines
+            } elseif ($row === $col || $row + $col === 4) {
+                $score += 5000; // Diagonal positions
+            } elseif ($row === 2 || $col === 2) {
+                $score += 2000; // Middle positions
+            }
+            
+            // Priority 3: Avoid edge positions with poor strategic value
+            if ($row === 0 || $row === 4 || $col === 0 || $col === 4) {
+                $score -= 1000; // Slight penalty for edges
+            }
+            
+            $positionsWithScores[] = [
+                'position' => $pos,
+                'score' => $score
+            ];
+        }
+        
+        // Sort by score (highest first)
+        usort($positionsWithScores, function($a, $b) {
+            return $b['score'] - $a['score'];
+        });
+        
+        // Extract sorted positions
         $prioritized = [];
-        
-        // Priority 1: Center (2,2)
-        foreach ($positions as $pos) {
-            if ($pos['row'] === 2 && $pos['col'] === 2) {
-                $prioritized[] = $pos;
-                break;
-            }
-        }
-        
-        // Priority 2: Corners (0,0), (0,4), (4,0), (4,4)
-        $corners = [[0,0], [0,4], [4,0], [4,4]];
-        foreach ($corners as $corner) {
-            foreach ($positions as $pos) {
-                if ($pos['row'] === $corner[0] && $pos['col'] === $corner[1]) {
-                    $prioritized[] = $pos;
-                    break;
-                }
-            }
-        }
-        
-        // Priority 3: Other diagonal positions (1,1), (3,3), (1,3), (3,1)
-        $diagonalPositions = [[1,1], [3,3], [1,3], [3,1]];
-        foreach ($diagonalPositions as $diagPos) {
-            foreach ($positions as $pos) {
-                if ($pos['row'] === $diagPos[0] && $pos['col'] === $diagPos[1]) {
-                    $prioritized[] = $pos;
-                    break;
-                }
-            }
-        }
-        
-        // Priority 4: All remaining positions
-        foreach ($positions as $pos) {
-            $alreadyAdded = false;
-            foreach ($prioritized as $prioPos) {
-                if ($prioPos['row'] === $pos['row'] && $prioPos['col'] === $pos['col']) {
-                    $alreadyAdded = true;
-                    break;
-                }
-            }
-            if (!$alreadyAdded) {
-                $prioritized[] = $pos;
-            }
+        foreach ($positionsWithScores as $item) {
+            $prioritized[] = $item['position'];
         }
         
         return $prioritized;
@@ -397,41 +457,48 @@ class DrawConfiguration {
     }
     
     /**
-     * Evaluate placement combination using priority system
+     * Evaluate placement combination using optimal strategic criteria
      */
     private function evaluatePlacementWithPriority($board, $combination) {
         $wildPlacements = $combination['wild_placements'];
         $superWildPlacements = $combination['super_wild_placements'];
+        $score = 0;
         
-        // Priority 1: Count completed Slingos
+        // 🎯 Priority 1: Complete Slingos (lines) for points/bonuses
         $completedSlingos = $this->countCompletedSlingos($board, $wildPlacements, $superWildPlacements);
         if ($completedSlingos > 0) {
-            $score = $completedSlingos * 10000; // Very high base score for completed Slingos
+            $score += $completedSlingos * 50000; // Highest priority
             
-            // Priority 2: Among completed Slingos, prioritize diagonals
+            // Extra bonus for diagonal completions (contribute to multiple Slingos)
             $diagonalSlingos = $this->countCompletedDiagonalSlingos($board, $wildPlacements, $superWildPlacements);
-            $score += $diagonalSlingos * 1000; // Extra bonus for diagonal completions
+            $score += $diagonalSlingos * 10000;
+            
+            // Super wild bonus for completing Slingos (premium resource usage)
+            $superWildsUsedForCompletion = $this->countSuperWildsUsedForCompletion($board, $wildPlacements, $superWildPlacements);
+            $score += $superWildsUsedForCompletion * 5000;
             
             return $score;
         }
         
-        // Priority 3: If no Slingos can be completed, find highest number of places for potential Slingos
-        $potentialSlingoData = $this->calculatePotentialSlingoData($board, $wildPlacements, $superWildPlacements);
+        // 🎯 Priority 2: Target rows/columns close to completion
+        $proximityScore = $this->calculateProximityToCompletionScore($board, $wildPlacements, $superWildPlacements);
+        $score += $proximityScore;
         
-        // Prioritize by maximum places filled in any single Slingo
-        $maxPlacesInSlingo = $potentialSlingoData['max_places'];
+        // 🎯 Priority 3: Favor center and diagonals for compound value
+        $centerDiagonalScore = $this->calculateCenterDiagonalScore($board, $wildPlacements, $superWildPlacements);
+        $score += $centerDiagonalScore;
         
-        // Count total potential Slingos with >1 place filled
-        $multiPlaceSlingos = $potentialSlingoData['multi_place_slingos'];
+        // 🎯 Priority 4: Double Slingo potential (one placement completing two lines)
+        $doubleSlingoScore = $this->calculateDoubleSlingoScore($board, $wildPlacements, $superWildPlacements);
+        $score += $doubleSlingoScore;
         
-        // Base score on maximum places in any single Slingo
-        $score = $maxPlacesInSlingo * 1000;
+        // 🎯 Priority 5: Use super wilds strategically (premium resource management)
+        $superWildEfficiencyScore = $this->calculateSuperWildEfficiencyScore($board, $wildPlacements, $superWildPlacements);
+        $score += $superWildEfficiencyScore;
         
-        // Add bonus for multiple potential Slingos with >1 place
-        $score += $multiPlaceSlingos * 100;
-        
-        // Small bonus for total filled positions (tie-breaker)
-        $score += (count($wildPlacements) + count($superWildPlacements)) * 10;
+        // 🎯 Priority 6: Avoid low-value placements (edge rows with multiple gaps)
+        $avoidancePenalty = $this->calculateAvoidancePenalty($board, $wildPlacements, $superWildPlacements);
+        $score -= $avoidancePenalty;
         
         return $score;
     }
@@ -583,6 +650,208 @@ class DrawConfiguration {
                         break;
                     }
                 }
+            }
+        }
+        
+        return $count;
+    }
+    
+    /**
+     * Calculate score based on proximity to Slingo completion
+     * 1 number away = highest priority, 2 numbers away = next priority
+     */
+    private function calculateProximityToCompletionScore($board, $wildPlacements, $superWildPlacements) {
+        $score = 0;
+        
+        // Check all rows, columns, and diagonals
+        for ($row = 0; $row < 5; $row++) {
+            $placesInRow = $this->countPlacesInRow($board, $row, $wildPlacements, $superWildPlacements);
+            if ($placesInRow === 4) {
+                $score += 15000; // 1 away from completion - highest priority
+            } elseif ($placesInRow === 3) {
+                $score += 5000; // 2 away from completion - next priority
+            } elseif ($placesInRow === 2) {
+                $score += 1000; // 3 away - some value for progression
+            }
+        }
+        
+        for ($col = 0; $col < 5; $col++) {
+            $placesInCol = $this->countPlacesInColumn($board, $col, $wildPlacements, $superWildPlacements);
+            if ($placesInCol === 4) {
+                $score += 15000; // 1 away from completion - highest priority
+            } elseif ($placesInCol === 3) {
+                $score += 5000; // 2 away from completion - next priority
+            } elseif ($placesInCol === 2) {
+                $score += 1000; // 3 away - some value for progression
+            }
+        }
+        
+        // Diagonals
+        $mainDiagPlaces = $this->countPlacesInMainDiagonal($board, $wildPlacements, $superWildPlacements);
+        if ($mainDiagPlaces === 4) {
+            $score += 20000; // Extra bonus for diagonal completion
+        } elseif ($mainDiagPlaces === 3) {
+            $score += 7000;
+        } elseif ($mainDiagPlaces === 2) {
+            $score += 1500;
+        }
+        
+        $antiDiagPlaces = $this->countPlacesInAntiDiagonal($board, $wildPlacements, $superWildPlacements);
+        if ($antiDiagPlaces === 4) {
+            $score += 20000; // Extra bonus for diagonal completion
+        } elseif ($antiDiagPlaces === 3) {
+            $score += 7000;
+        } elseif ($antiDiagPlaces === 2) {
+            $score += 1500;
+        }
+        
+        return $score;
+    }
+    
+    /**
+     * Calculate score for center and diagonal positions (compound value)
+     */
+    private function calculateCenterDiagonalScore($board, $wildPlacements, $superWildPlacements) {
+        $score = 0;
+        
+        foreach (array_merge($wildPlacements, $superWildPlacements) as $placement) {
+            $row = $placement['row'] - 1;
+            $col = $placement['column'] - 1;
+            
+            // Center position (2,2) - contributes to row, column, and both diagonals
+            if ($row === 2 && $col === 2) {
+                $score += 3000;
+            }
+            // Main diagonal positions
+            elseif ($row === $col) {
+                $score += 2000;
+            }
+            // Anti-diagonal positions
+            elseif ($row + $col === 4) {
+                $score += 2000;
+            }
+            // Middle row/column positions (contribute to more potential combinations)
+            elseif ($row === 2 || $col === 2) {
+                $score += 1000;
+            }
+        }
+        
+        return $score;
+    }
+    
+    /**
+     * Calculate score for double Slingo potential (one placement completing two lines)
+     */
+    private function calculateDoubleSlingoScore($board, $wildPlacements, $superWildPlacements) {
+        $score = 0;
+        
+        foreach (array_merge($wildPlacements, $superWildPlacements) as $placement) {
+            $row = $placement['row'] - 1;
+            $col = $placement['column'] - 1;
+            
+            $linesThisPositionCanComplete = 0;
+            
+            // Check if placing here would complete the row
+            if ($this->wouldPositionCompleteRow($board, $row, $col, $wildPlacements, $superWildPlacements)) {
+                $linesThisPositionCanComplete++;
+            }
+            
+            // Check if placing here would complete the column
+            if ($this->wouldPositionCompleteColumn($board, $row, $col, $wildPlacements, $superWildPlacements)) {
+                $linesThisPositionCanComplete++;
+            }
+            
+            // Check diagonals
+            if ($row === $col && $this->wouldPositionCompleteMainDiagonal($board, $row, $col, $wildPlacements, $superWildPlacements)) {
+                $linesThisPositionCanComplete++;
+            }
+            
+            if ($row + $col === 4 && $this->wouldPositionCompleteAntiDiagonal($board, $row, $col, $wildPlacements, $superWildPlacements)) {
+                $linesThisPositionCanComplete++;
+            }
+            
+            // Score based on number of lines this position can complete
+            if ($linesThisPositionCanComplete >= 2) {
+                $score += $linesThisPositionCanComplete * 8000; // Double/triple/quad Slingo bonus
+            }
+        }
+        
+        return $score;
+    }
+    
+    /**
+     * Calculate super wild efficiency score (premium resource management)
+     */
+    private function calculateSuperWildEfficiencyScore($board, $wildPlacements, $superWildPlacements) {
+        $score = 0;
+        
+        foreach ($superWildPlacements as $placement) {
+            $row = $placement['row'] - 1;
+            $col = $placement['column'] - 1;
+            
+            // Bonus for using super wilds to complete Slingos
+            if ($this->wouldPositionCompleteAnySlingo($board, $row, $col, $wildPlacements, $superWildPlacements)) {
+                $score += 4000;
+            }
+            
+            // Bonus for using super wilds in high-value positions (center, diagonals)
+            if ($row === 2 && $col === 2) {
+                $score += 2000; // Center
+            } elseif ($row === $col || $row + $col === 4) {
+                $score += 1500; // Diagonals
+            }
+            
+            // Bonus for using super wilds where they contribute to multiple potential Slingos
+            $potentialContributions = $this->countPotentialSlingoContributions($board, $row, $col);
+            $score += $potentialContributions * 500;
+        }
+        
+        return $score;
+    }
+    
+    /**
+     * Calculate penalty for low-value placements (edge rows with multiple gaps)
+     */
+    private function calculateAvoidancePenalty($board, $wildPlacements, $superWildPlacements) {
+        $penalty = 0;
+        
+        foreach (array_merge($wildPlacements, $superWildPlacements) as $placement) {
+            $row = $placement['row'] - 1;
+            $col = $placement['column'] - 1;
+            
+            // Penalty for placing on rows/columns with many gaps
+            $rowGaps = $this->countGapsInRow($board, $row, $wildPlacements, $superWildPlacements);
+            $colGaps = $this->countGapsInColumn($board, $col, $wildPlacements, $superWildPlacements);
+            
+            if ($rowGaps >= 3) {
+                $penalty += 1000; // Avoid rows with multiple remaining numbers
+            }
+            if ($colGaps >= 3) {
+                $penalty += 1000; // Avoid columns with multiple remaining numbers
+            }
+            
+            // Extra penalty for edge positions with poor strategic value
+            if (($row === 0 || $row === 4 || $col === 0 || $col === 4) && 
+                ($rowGaps >= 2 || $colGaps >= 2)) {
+                $penalty += 500;
+            }
+        }
+        
+        return $penalty;
+    }
+    
+    /**
+     * Count super wilds used for completing Slingos
+     */
+    private function countSuperWildsUsedForCompletion($board, $wildPlacements, $superWildPlacements) {
+        $count = 0;
+        
+        foreach ($superWildPlacements as $placement) {
+            $row = $placement['row'] - 1;
+            $col = $placement['column'] - 1;
+            
+            if ($this->wouldPositionCompleteAnySlingo($board, $row, $col, $wildPlacements, $superWildPlacements)) {
+                $count++;
             }
         }
         
@@ -1328,6 +1597,249 @@ class DrawConfiguration {
         }
         
         return implode(', ', $reasons);
+    }
+    
+    /**
+     * Check if a position would complete any Slingo line
+     */
+    private function wouldPositionCompleteAnySlingo($board, $row, $col, $wildPlacements, $superWildPlacements) {
+        return $this->wouldPositionCompleteRow($board, $row, $col, $wildPlacements, $superWildPlacements) ||
+               $this->wouldPositionCompleteColumn($board, $row, $col, $wildPlacements, $superWildPlacements) ||
+               ($row === $col && $this->wouldPositionCompleteMainDiagonal($board, $row, $col, $wildPlacements, $superWildPlacements)) ||
+               ($row + $col === 4 && $this->wouldPositionCompleteAntiDiagonal($board, $row, $col, $wildPlacements, $superWildPlacements));
+    }
+    
+    /**
+     * Check if placing at position would complete the row
+     */
+    private function wouldPositionCompleteRow($board, $targetRow, $targetCol, $wildPlacements, $superWildPlacements) {
+        $coveredCount = 0;
+        
+        for ($col = 0; $col < 5; $col++) {
+            if ($board->isCovered($targetRow, $col)) {
+                $coveredCount++;
+            } elseif ($col === $targetCol) {
+                $coveredCount++; // This position would be covered by our placement
+            } else {
+                // Check if another wild covers this position
+                $hasWild = false;
+                foreach (array_merge($wildPlacements, $superWildPlacements) as $placement) {
+                    if ($placement['row'] - 1 === $targetRow && $placement['column'] - 1 === $col) {
+                        $hasWild = true;
+                        break;
+                    }
+                }
+                if ($hasWild) {
+                    $coveredCount++;
+                }
+            }
+        }
+        
+        return $coveredCount >= 5;
+    }
+    
+    /**
+     * Check if placing at position would complete the column
+     */
+    private function wouldPositionCompleteColumn($board, $targetRow, $targetCol, $wildPlacements, $superWildPlacements) {
+        $coveredCount = 0;
+        
+        for ($row = 0; $row < 5; $row++) {
+            if ($board->isCovered($row, $targetCol)) {
+                $coveredCount++;
+            } elseif ($row === $targetRow) {
+                $coveredCount++; // This position would be covered by our placement
+            } else {
+                // Check if another wild covers this position
+                $hasWild = false;
+                foreach (array_merge($wildPlacements, $superWildPlacements) as $placement) {
+                    if ($placement['row'] - 1 === $row && $placement['column'] - 1 === $targetCol) {
+                        $hasWild = true;
+                        break;
+                    }
+                }
+                if ($hasWild) {
+                    $coveredCount++;
+                }
+            }
+        }
+        
+        return $coveredCount >= 5;
+    }
+    
+    /**
+     * Check if placing at position would complete main diagonal
+     */
+    private function wouldPositionCompleteMainDiagonal($board, $targetRow, $targetCol, $wildPlacements, $superWildPlacements) {
+        if ($targetRow !== $targetCol) {
+            return false; // Not on main diagonal
+        }
+        
+        $coveredCount = 0;
+        
+        for ($i = 0; $i < 5; $i++) {
+            if ($board->isCovered($i, $i)) {
+                $coveredCount++;
+            } elseif ($i === $targetRow) {
+                $coveredCount++; // This position would be covered by our placement
+            } else {
+                // Check if another wild covers this position
+                $hasWild = false;
+                foreach (array_merge($wildPlacements, $superWildPlacements) as $placement) {
+                    if ($placement['row'] - 1 === $i && $placement['column'] - 1 === $i) {
+                        $hasWild = true;
+                        break;
+                    }
+                }
+                if ($hasWild) {
+                    $coveredCount++;
+                }
+            }
+        }
+        
+        return $coveredCount >= 5;
+    }
+    
+    /**
+     * Check if placing at position would complete anti-diagonal
+     */
+    private function wouldPositionCompleteAntiDiagonal($board, $targetRow, $targetCol, $wildPlacements, $superWildPlacements) {
+        if ($targetRow + $targetCol !== 4) {
+            return false; // Not on anti-diagonal
+        }
+        
+        $coveredCount = 0;
+        
+        for ($i = 0; $i < 5; $i++) {
+            $row = $i;
+            $col = 4 - $i;
+            if ($board->isCovered($row, $col)) {
+                $coveredCount++;
+            } elseif ($row === $targetRow && $col === $targetCol) {
+                $coveredCount++; // This position would be covered by our placement
+            } else {
+                // Check if another wild covers this position
+                $hasWild = false;
+                foreach (array_merge($wildPlacements, $superWildPlacements) as $placement) {
+                    if ($placement['row'] - 1 === $row && $placement['column'] - 1 === $col) {
+                        $hasWild = true;
+                        break;
+                    }
+                }
+                if ($hasWild) {
+                    $coveredCount++;
+                }
+            }
+        }
+        
+        return $coveredCount >= 5;
+    }
+    
+    /**
+     * Count potential Slingo contributions for a position
+     */
+    private function countPotentialSlingoContributions($board, $row, $col) {
+        $contributions = 0;
+        
+        // Check row contribution
+        $rowPlaces = 0;
+        for ($c = 0; $c < 5; $c++) {
+            if ($board->isCovered($row, $c)) {
+                $rowPlaces++;
+            }
+        }
+        if ($rowPlaces >= 2) { // Row has potential
+            $contributions++;
+        }
+        
+        // Check column contribution
+        $colPlaces = 0;
+        for ($r = 0; $r < 5; $r++) {
+            if ($board->isCovered($r, $col)) {
+                $colPlaces++;
+            }
+        }
+        if ($colPlaces >= 2) { // Column has potential
+            $contributions++;
+        }
+        
+        // Check main diagonal
+        if ($row === $col) {
+            $diagPlaces = 0;
+            for ($i = 0; $i < 5; $i++) {
+                if ($board->isCovered($i, $i)) {
+                    $diagPlaces++;
+                }
+            }
+            if ($diagPlaces >= 2) {
+                $contributions++;
+            }
+        }
+        
+        // Check anti-diagonal
+        if ($row + $col === 4) {
+            $antiDiagPlaces = 0;
+            for ($i = 0; $i < 5; $i++) {
+                if ($board->isCovered($i, 4 - $i)) {
+                    $antiDiagPlaces++;
+                }
+            }
+            if ($antiDiagPlaces >= 2) {
+                $contributions++;
+            }
+        }
+        
+        return $contributions;
+    }
+    
+    /**
+     * Count gaps (uncovered positions) in a row
+     */
+    private function countGapsInRow($board, $row, $wildPlacements, $superWildPlacements) {
+        $gaps = 0;
+        
+        for ($col = 0; $col < 5; $col++) {
+            if (!$board->isCovered($row, $col)) {
+                // Check if this position is covered by a wild placement
+                $hasWild = false;
+                foreach (array_merge($wildPlacements, $superWildPlacements) as $placement) {
+                    if ($placement['row'] - 1 === $row && $placement['column'] - 1 === $col) {
+                        $hasWild = true;
+                        break;
+                    }
+                }
+                if (!$hasWild) {
+                    $gaps++;
+                }
+            }
+        }
+        
+        return $gaps;
+    }
+    
+    /**
+     * Count gaps (uncovered positions) in a column
+     */
+    private function countGapsInColumn($board, $col, $wildPlacements, $superWildPlacements) {
+        $gaps = 0;
+        
+        for ($row = 0; $row < 5; $row++) {
+            if (!$board->isCovered($row, $col)) {
+                // Check if this position is covered by a wild placement
+                $hasWild = false;
+                foreach (array_merge($wildPlacements, $superWildPlacements) as $placement) {
+                    if ($placement['row'] - 1 === $row && $placement['column'] - 1 === $col) {
+                        $hasWild = true;
+                        break;
+                    }
+                }
+                if (!$hasWild) {
+                    $gaps++;
+                }
+            }
+        }
+        
+        return $gaps;
     }
     
     /**

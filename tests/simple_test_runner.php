@@ -42,7 +42,10 @@ $testClasses = [
         'testExpectedScoreCalculation',
         'testTilePlacementHeuristic',
         'testMultipleDrawRowsWithWilds',
-        'testMemoryEfficiencyWithManyWilds'
+        'testMemoryEfficiencyWithManyWilds',
+        'testStrategicWildPlacement',
+        'testDiagonalPriorityStrategy',
+        'testAvoidLowValuePlacements'
     ],
     'SimpleSlingoAnalyzerTest' => [
         'testAnalyzeOptimalStrategy',
