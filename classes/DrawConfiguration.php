@@ -44,7 +44,7 @@ class DrawConfiguration {
     }
 
     /**
-     * Get optimal wild placements for a given board
+     * Get optimal wild placements for a given board using depth-first search
      */
     public function getOptimalWildPlacements($board) {
         $recommendations = [];
@@ -62,8 +62,8 @@ class DrawConfiguration {
                 }
             }
             
-            // Calculate optimal placements
-            $optimalPlacement = $this->calculateOptimalPlacement($board, $wildPositions, $superWildPositions);
+            // Calculate optimal placements using depth-first search
+            $optimalPlacement = $this->calculateOptimalPlacementDFS($board, $wildPositions, $superWildPositions);
             
             if ($optimalPlacement) {
                 $recommendations[] = [
@@ -81,62 +81,378 @@ class DrawConfiguration {
     }
 
     /**
-     * Calculate optimal placement for wilds and super wilds
+     * Calculate optimal placement using depth-first search with priority system
      */
-    private function calculateOptimalPlacement($board, $wildPositions, $superWildPositions) {
-        $bestScore = 0;
-        $bestPlacement = null;
-        $bestReasoning = '';
-        $bestWildPlacements = [];
-        $bestSuperWildPlacements = [];
+    private function calculateOptimalPlacementDFS($board, $wildPositions, $superWildPositions) {
+        if (empty($wildPositions) && empty($superWildPositions)) {
+            return null;
+        }
         
-        // Generate all possible combinations of wild placements
-        $combinations = $this->generateWildCombinations($wildPositions, $superWildPositions);
+        $bestResult = null;
+        $bestScore = -1;
         
-        foreach ($combinations as $combination) {
-            // Calculate specific placements for this combination
-            $wildPlacements = [];
-            $superWildPlacements = [];
-            
-            // First place all wilds (they must go in their assigned column)
-            foreach ($combination as $colIndex => $position) {
-                if ($position === 'wild') {
-                    $bestRow = $this->findBestRowForWild($board, $colIndex);
-                    $wildPlacements[] = ['row' => $bestRow + 1, 'column' => $colIndex + 1];
-                }
-            }
-            
-            // Then place all super wilds (they can go anywhere, considering wild placements)
-            foreach ($combination as $colIndex => $position) {
-                if ($position === 'super_wild') {
-                    $bestPosition = $this->findBestPositionForSuperWildWithWilds($board, $wildPlacements);
-                    $superWildPlacements[] = ['row' => $bestPosition['row'] + 1, 'column' => $bestPosition['col'] + 1];
-                }
-            }
-            
-            // Calculate score based on actual placements
-            $score = $this->calculateScoreWithPlacements($board, $wildPlacements, $superWildPlacements);
+        // Generate all possible placement combinations using DFS
+        $allCombinations = $this->generateAllPlacementCombinations($board, $wildPositions, $superWildPositions);
+        
+        // Evaluate each combination using our priority system
+        foreach ($allCombinations as $combination) {
+            $score = $this->evaluatePlacementWithPriority($board, $combination);
             
             if ($score > $bestScore) {
                 $bestScore = $score;
-                $bestPlacement = $combination;
-                $bestReasoning = $this->generateReasoningWithPlacements($board, $wildPlacements, $superWildPlacements);
-                $bestWildPlacements = $wildPlacements;
-                $bestSuperWildPlacements = $superWildPlacements;
+                $bestResult = $combination;
             }
         }
         
-        if ($bestPlacement) {
+        if ($bestResult) {
             return [
-                'positions' => $bestPlacement,
+                'positions' => $this->convertPlacementsToPositions($wildPositions, $superWildPositions),
                 'expected_score' => round($bestScore, 1),
-                'reasoning' => $bestReasoning,
-                'wild_placements' => $bestWildPlacements,
-                'super_wild_placements' => $bestSuperWildPlacements
+                'reasoning' => $this->generateReasoningWithPlacements($board, $bestResult['wild_placements'], $bestResult['super_wild_placements']),
+                'wild_placements' => $bestResult['wild_placements'],
+                'super_wild_placements' => $bestResult['super_wild_placements']
             ];
         }
         
         return null;
+    }
+    
+    /**
+     * Generate all possible placement combinations using depth-first search
+     */
+    private function generateAllPlacementCombinations($board, $wildPositions, $superWildPositions) {
+        $combinations = [];
+        
+        // Get all uncovered positions
+        $uncoveredPositions = $this->getUncoveredPositions($board);
+        
+        // For wilds: they must be placed in their specific column
+        $wildOptions = [];
+        foreach ($wildPositions as $wildCol) {
+            $wildOptions[$wildCol] = [];
+            foreach ($uncoveredPositions as $pos) {
+                if ($pos['col'] === $wildCol) {
+                    $wildOptions[$wildCol][] = $pos;
+                }
+            }
+        }
+        
+        // For super wilds: they can be placed anywhere
+        $superWildOptions = $uncoveredPositions;
+        
+        // Use DFS to generate all combinations
+        $this->dfsGenerateCombinations($wildOptions, $superWildOptions, [], [], 0, $wildPositions, $superWildPositions, $combinations);
+        
+        return $combinations;
+    }
+    
+    /**
+     * Depth-first search to generate placement combinations
+     */
+    private function dfsGenerateCombinations($wildOptions, $superWildOptions, $currentWildPlacements, $currentSuperWildPlacements, $wildIndex, $wildCols, $superWildCols, &$combinations) {
+        // If we've placed all wilds, start placing super wilds
+        if ($wildIndex >= count($wildCols)) {
+            $this->dfsGenerateSuperWildCombinations($superWildOptions, $currentWildPlacements, $currentSuperWildPlacements, 0, $superWildCols, $combinations);
+            return;
+        }
+        
+        $wildCol = $wildCols[$wildIndex];
+        
+        // Check if there are any valid positions for this wild
+        if (!isset($wildOptions[$wildCol]) || empty($wildOptions[$wildCol])) {
+            // No valid positions for this wild, skip to next
+            $this->dfsGenerateCombinations($wildOptions, $superWildOptions, $currentWildPlacements, $currentSuperWildPlacements, $wildIndex + 1, $wildCols, $superWildCols, $combinations);
+            return;
+        }
+        
+        // Try placing the wild in each available position in its column
+        foreach ($wildOptions[$wildCol] as $position) {
+            // Check if this position is already taken
+            if (!$this->isPositionTaken($position, $currentWildPlacements, $currentSuperWildPlacements)) {
+                $newWildPlacements = $currentWildPlacements;
+                $newWildPlacements[] = ['row' => $position['row'] + 1, 'column' => $position['col'] + 1];
+                
+                // Recursively place next wild
+                $this->dfsGenerateCombinations($wildOptions, $superWildOptions, $newWildPlacements, $currentSuperWildPlacements, $wildIndex + 1, $wildCols, $superWildCols, $combinations);
+            }
+        }
+    }
+    
+    /**
+     * DFS for super wild combinations
+     */
+    private function dfsGenerateSuperWildCombinations($superWildOptions, $wildPlacements, $currentSuperWildPlacements, $superWildIndex, $superWildCols, &$combinations) {
+        // If we've placed all super wilds, add this combination
+        if ($superWildIndex >= count($superWildCols)) {
+            $combinations[] = [
+                'wild_placements' => $wildPlacements,
+                'super_wild_placements' => $currentSuperWildPlacements
+            ];
+            return;
+        }
+        
+        // Check if there are any valid positions for super wilds
+        if (empty($superWildOptions)) {
+            // No valid positions, just add current combination
+            $combinations[] = [
+                'wild_placements' => $wildPlacements,
+                'super_wild_placements' => $currentSuperWildPlacements
+            ];
+            return;
+        }
+        
+        // Try placing the super wild in each available position
+        foreach ($superWildOptions as $position) {
+            // Check if this position is already taken
+            if (!$this->isPositionTaken($position, $wildPlacements, $currentSuperWildPlacements)) {
+                $newSuperWildPlacements = $currentSuperWildPlacements;
+                $newSuperWildPlacements[] = ['row' => $position['row'] + 1, 'column' => $position['col'] + 1];
+                
+                // Recursively place next super wild
+                $this->dfsGenerateSuperWildCombinations($superWildOptions, $wildPlacements, $newSuperWildPlacements, $superWildIndex + 1, $superWildCols, $combinations);
+            }
+        }
+    }
+    
+    /**
+     * Get all uncovered positions on the board
+     */
+    private function getUncoveredPositions($board) {
+        $positions = [];
+        for ($row = 0; $row < 5; $row++) {
+            for ($col = 0; $col < 5; $col++) {
+                if (!$board->isCovered($row, $col)) {
+                    $positions[] = ['row' => $row, 'col' => $col];
+                }
+            }
+        }
+        return $positions;
+    }
+    
+    /**
+     * Check if a position is already taken by existing placements
+     */
+    private function isPositionTaken($position, $wildPlacements, $superWildPlacements) {
+        foreach ($wildPlacements as $placement) {
+            if ($placement['row'] - 1 === $position['row'] && $placement['column'] - 1 === $position['col']) {
+                return true;
+            }
+        }
+        foreach ($superWildPlacements as $placement) {
+            if ($placement['row'] - 1 === $position['row'] && $placement['column'] - 1 === $position['col']) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * Evaluate placement combination using priority system
+     */
+    private function evaluatePlacementWithPriority($board, $combination) {
+        $wildPlacements = $combination['wild_placements'];
+        $superWildPlacements = $combination['super_wild_placements'];
+        
+        // Priority 1: Count completed Slingos
+        $completedSlingos = $this->countCompletedSlingos($board, $wildPlacements, $superWildPlacements);
+        if ($completedSlingos > 0) {
+            $score = $completedSlingos * 10000; // Very high base score for completed Slingos
+            
+            // Priority 2: Among completed Slingos, prioritize diagonals
+            $diagonalSlingos = $this->countCompletedDiagonalSlingos($board, $wildPlacements, $superWildPlacements);
+            $score += $diagonalSlingos * 1000; // Extra bonus for diagonal completions
+            
+            return $score;
+        }
+        
+        // Priority 3: If no Slingos can be completed, find highest number of places for potential Slingos
+        $potentialSlingoData = $this->calculatePotentialSlingoData($board, $wildPlacements, $superWildPlacements);
+        
+        // Prioritize by maximum places filled in any single Slingo
+        $maxPlacesInSlingo = $potentialSlingoData['max_places'];
+        
+        // Count total potential Slingos with >1 place filled
+        $multiPlaceSlingos = $potentialSlingoData['multi_place_slingos'];
+        
+        // Base score on maximum places in any single Slingo
+        $score = $maxPlacesInSlingo * 1000;
+        
+        // Add bonus for multiple potential Slingos with >1 place
+        $score += $multiPlaceSlingos * 100;
+        
+        // Small bonus for total filled positions (tie-breaker)
+        $score += (count($wildPlacements) + count($superWildPlacements)) * 10;
+        
+        return $score;
+    }
+    
+    /**
+     * Count completed diagonal Slingos specifically
+     */
+    private function countCompletedDiagonalSlingos($board, $wildPlacements, $superWildPlacements) {
+        $count = 0;
+        
+        if ($this->wouldCompleteMainDiagonalWithPlacements($board, $wildPlacements, $superWildPlacements)) {
+            $count++;
+        }
+        if ($this->wouldCompleteAntiDiagonalWithPlacements($board, $wildPlacements, $superWildPlacements)) {
+            $count++;
+        }
+        
+        return $count;
+    }
+    
+    /**
+     * Calculate potential Slingo data for priority evaluation
+     */
+    private function calculatePotentialSlingoData($board, $wildPlacements, $superWildPlacements) {
+        $maxPlaces = 0;
+        $multiPlaceSlingos = 0;
+        
+        // Check all possible Slingos (rows, columns, diagonals)
+        $slingoTypes = [
+            'rows' => range(0, 4),
+            'cols' => range(0, 4),
+            'diagonals' => ['main', 'anti']
+        ];
+        
+        foreach ($slingoTypes as $type => $indices) {
+            foreach ($indices as $index) {
+                $placesInThisSlingo = 0;
+                
+                if ($type === 'rows') {
+                    $placesInThisSlingo = $this->countPlacesInRow($board, $index, $wildPlacements, $superWildPlacements);
+                } elseif ($type === 'cols') {
+                    $placesInThisSlingo = $this->countPlacesInColumn($board, $index, $wildPlacements, $superWildPlacements);
+                } elseif ($type === 'diagonals') {
+                    if ($index === 'main') {
+                        $placesInThisSlingo = $this->countPlacesInMainDiagonal($board, $wildPlacements, $superWildPlacements);
+                    } else {
+                        $placesInThisSlingo = $this->countPlacesInAntiDiagonal($board, $wildPlacements, $superWildPlacements);
+                    }
+                }
+                
+                $maxPlaces = max($maxPlaces, $placesInThisSlingo);
+                if ($placesInThisSlingo > 1) {
+                    $multiPlaceSlingos++;
+                }
+            }
+        }
+        
+        return [
+            'max_places' => $maxPlaces,
+            'multi_place_slingos' => $multiPlaceSlingos
+        ];
+    }
+    
+    /**
+     * Count total places (covered + wild placements) in a row
+     */
+    private function countPlacesInRow($board, $row, $wildPlacements, $superWildPlacements) {
+        $count = 0;
+        
+        for ($col = 0; $col < 5; $col++) {
+            if ($board->isCovered($row, $col)) {
+                $count++;
+            } else {
+                // Check if there's a wild placement here
+                foreach (array_merge($wildPlacements, $superWildPlacements) as $placement) {
+                    if ($placement['row'] - 1 === $row && $placement['column'] - 1 === $col) {
+                        $count++;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        return $count;
+    }
+    
+    /**
+     * Count total places in a column
+     */
+    private function countPlacesInColumn($board, $col, $wildPlacements, $superWildPlacements) {
+        $count = 0;
+        
+        for ($row = 0; $row < 5; $row++) {
+            if ($board->isCovered($row, $col)) {
+                $count++;
+            } else {
+                // Check if there's a wild placement here
+                foreach (array_merge($wildPlacements, $superWildPlacements) as $placement) {
+                    if ($placement['row'] - 1 === $row && $placement['column'] - 1 === $col) {
+                        $count++;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        return $count;
+    }
+    
+    /**
+     * Count total places in main diagonal
+     */
+    private function countPlacesInMainDiagonal($board, $wildPlacements, $superWildPlacements) {
+        $count = 0;
+        
+        for ($i = 0; $i < 5; $i++) {
+            if ($board->isCovered($i, $i)) {
+                $count++;
+            } else {
+                // Check if there's a wild placement here
+                foreach (array_merge($wildPlacements, $superWildPlacements) as $placement) {
+                    if ($placement['row'] - 1 === $i && $placement['column'] - 1 === $i) {
+                        $count++;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        return $count;
+    }
+    
+    /**
+     * Count total places in anti-diagonal
+     */
+    private function countPlacesInAntiDiagonal($board, $wildPlacements, $superWildPlacements) {
+        $count = 0;
+        
+        for ($i = 0; $i < 5; $i++) {
+            $row = $i;
+            $col = 4 - $i;
+            if ($board->isCovered($row, $col)) {
+                $count++;
+            } else {
+                // Check if there's a wild placement here
+                foreach (array_merge($wildPlacements, $superWildPlacements) as $placement) {
+                    if ($placement['row'] - 1 === $row && $placement['column'] - 1 === $col) {
+                        $count++;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        return $count;
+    }
+    
+    /**
+     * Convert wild positions to position array format
+     */
+    private function convertPlacementsToPositions($wildPositions, $superWildPositions) {
+        $positions = ['none', 'none', 'none', 'none', 'none'];
+        
+        foreach ($wildPositions as $col) {
+            $positions[$col] = 'wild';
+        }
+        foreach ($superWildPositions as $col) {
+            $positions[$col] = 'super_wild';
+        }
+        
+        return $positions;
     }
 
     /**
