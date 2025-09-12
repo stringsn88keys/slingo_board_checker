@@ -202,4 +202,171 @@ class DrawConfigurationTest extends PHPUnit\Framework\TestCase {
         $placements = $config->getOptimalWildPlacements($this->board);
         $this->assertIsArray($placements);
     }
+    
+    /**
+     * Test Priority System: Completed Slingos get highest priority
+     */
+    public function testPrioritySystemCompletedSlingos() {
+        $config = new DrawConfiguration();
+        $config->addRow(['super_wild', 'none', 'none', 'none', 'none']);
+        
+        // Board where super wild can complete either row 1 or main diagonal
+        $this->board->setCoveredPositions([
+            [0, 1], [0, 2], [0, 3], [0, 4], // Row 1 needs [0,0] to complete
+            [1, 1], [2, 2], [3, 3]          // Main diagonal needs [4,4] to complete
+        ]);
+        
+        $placements = $config->getOptimalWildPlacements($this->board);
+        
+        $this->assertNotEmpty($placements, 'Should find optimal placements');
+        $this->assertGreaterThan(10000, $placements[0]['expected_score'], 
+            'Completed Slingo should have very high score');
+    }
+    
+    /**
+     * Test Priority System: Diagonal priority over horizontal/vertical
+     */
+    public function testPrioritySystemDiagonalPriority() {
+        $config = new DrawConfiguration();
+        $config->addRow(['super_wild', 'none', 'none', 'none', 'none']);
+        
+        // Board where super wild can complete either row 1 or main diagonal
+        $this->board->setCoveredPositions([
+            [0, 1], [0, 2], [0, 3], [0, 4], // Row 1 needs [0,0] to complete
+            [1, 1], [2, 2], [3, 3]          // Main diagonal needs [4,4] to complete
+        ]);
+        
+        $placements = $config->getOptimalWildPlacements($this->board);
+        
+        // Should prioritize diagonal completion at [4,4] over row completion at [0,0]
+        $superWildPlacement = $placements[0]['super_wild_placements'][0];
+        $this->assertEquals(5, $superWildPlacement['row'], 'Should prioritize diagonal (row 5)');
+        $this->assertEquals(5, $superWildPlacement['column'], 'Should prioritize diagonal (column 5)');
+    }
+    
+    /**
+     * Test Priority System: Setup moves when no Slingos completable
+     */
+    public function testPrioritySystemSetupMoves() {
+        $config = new DrawConfiguration();
+        $config->addRow(['super_wild', 'wild', 'none', 'none', 'none']);
+        
+        // Board with minimal coverage - no completable Slingos
+        $this->board->setCoveredPositions([[0, 0], [2, 2]]);
+        
+        $placements = $config->getOptimalWildPlacements($this->board);
+        
+        $this->assertNotEmpty($placements, 'Should find setup moves');
+        $this->assertLessThan(10000, $placements[0]['expected_score'], 
+            'Setup moves should have lower score than completed Slingos');
+        $this->assertGreaterThan(1000, $placements[0]['expected_score'], 
+            'Setup moves should prioritize high-value setups');
+    }
+    
+    /**
+     * Test Depth-First Search: All combinations generated
+     */
+    public function testDepthFirstSearchCombinations() {
+        $config = new DrawConfiguration();
+        $config->addRow(['super_wild', 'wild', 'none', 'none', 'none']);
+        
+        $this->board->setCoveredPositions([[0, 0], [1, 3], [2, 2], [3, 3]]);
+        
+        $placements = $config->getOptimalWildPlacements($this->board);
+        
+        $this->assertNotEmpty($placements, 'Should generate placement combinations');
+        
+        $placement = $placements[0];
+        
+        // Should have both wild and super wild placements
+        $this->assertArrayHasKey('wild_placements', $placement, 'Should have wild placements');
+        $this->assertArrayHasKey('super_wild_placements', $placement, 'Should have super wild placements');
+        $this->assertNotEmpty($placement['wild_placements'], 'Should place wild');
+        $this->assertNotEmpty($placement['super_wild_placements'], 'Should place super wild');
+        
+        // Wild should be constrained to column 2
+        $this->assertEquals(2, $placement['wild_placements'][0]['column'], 
+            'Wild should be placed in column 2');
+    }
+    
+    /**
+     * Test Wild Constraint: Wild must be placed in correct column
+     */
+    public function testWildColumnConstraint() {
+        $config = new DrawConfiguration();
+        $config->addRow(['none', 'none', 'wild', 'none', 'none']); // Wild in column 3
+        
+        $this->board->setCoveredPositions([[0, 0], [1, 1]]);
+        
+        $placements = $config->getOptimalWildPlacements($this->board);
+        
+        if (!empty($placements) && !empty($placements[0]['wild_placements'])) {
+            $wildPlacement = $placements[0]['wild_placements'][0];
+            $this->assertEquals(3, $wildPlacement['column'], 
+                'Wild should only be placed in its designated column (3)');
+        }
+    }
+    
+    /**
+     * Test Super Wild Flexibility: Super wild can be placed anywhere
+     */
+    public function testSuperWildFlexibility() {
+        $config = new DrawConfiguration();
+        $config->addRow(['super_wild', 'none', 'none', 'none', 'none']);
+        
+        $this->board->setCoveredPositions([[0, 0], [1, 1], [2, 2], [3, 3]]);
+        
+        $placements = $config->getOptimalWildPlacements($this->board);
+        
+        $this->assertNotEmpty($placements, 'Should find placements for super wild');
+        $this->assertNotEmpty($placements[0]['super_wild_placements'], 'Should place super wild');
+        
+        // Super wild should be placed to complete main diagonal at [4,4]
+        $superWildPlacement = $placements[0]['super_wild_placements'][0];
+        $this->assertEquals(5, $superWildPlacement['row'], 'Super wild should complete diagonal');
+        $this->assertEquals(5, $superWildPlacement['column'], 'Super wild should complete diagonal');
+    }
+    
+    /**
+     * Test Edge Case: No available positions for wild
+     */
+    public function testEdgeCaseNoWildPositions() {
+        $config = new DrawConfiguration();
+        $config->addRow(['none', 'wild', 'super_wild', 'none', 'none']);
+        
+        // Cover entire column 2 (index 1) where wild must be placed
+        $this->board->setCoveredPositions([
+            [0, 1], [1, 1], [2, 1], [3, 1], [4, 1]
+        ]);
+        
+        $placements = $config->getOptimalWildPlacements($this->board);
+        
+        // Should still work with just super wild
+        $this->assertNotEmpty($placements, 'Should handle case where wild cannot be placed');
+        
+        if (!empty($placements)) {
+            $placement = $placements[0];
+            $this->assertEmpty($placement['wild_placements'], 'Should have no wild placements');
+            $this->assertNotEmpty($placement['super_wild_placements'], 'Should still place super wild');
+        }
+    }
+    
+    /**
+     * Test Multiple Draws: Each draw evaluated independently
+     */
+    public function testMultipleDrawsEvaluation() {
+        $config = new DrawConfiguration();
+        $config->addRow(['wild', 'none', 'none', 'none', 'none']);
+        $config->addRow(['none', 'super_wild', 'none', 'none', 'none']);
+        
+        $this->board->setCoveredPositions([[0, 0], [1, 1], [2, 2]]);
+        
+        $placements = $config->getOptimalWildPlacements($this->board);
+        
+        $this->assertCount(2, $placements, 'Should evaluate each draw row separately');
+        
+        // Each placement should have a row number
+        $this->assertEquals(1, $placements[0]['row'], 'First placement should be for row 1');
+        $this->assertEquals(2, $placements[1]['row'], 'Second placement should be for row 2');
+    }
 }

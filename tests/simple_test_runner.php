@@ -48,7 +48,13 @@ $testClasses = [
         'testCompletionPercentage',
         'testProbabilityBreakdown',
         'testCalculateExpectedValue',
-        'testEmptyDraws'
+        'testEmptyDraws',
+        'testPriority1CompletedSlingos',
+        'testPriority2DiagonalPriority',
+        'testPriority3SetupMoves',
+        'testDepthFirstSearchValidCombinations',
+        'testSpecificExampleFromRequirements',
+        'testEdgeCasesHandling'
     ]
 ];
 
