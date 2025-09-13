@@ -286,5 +286,243 @@ class SimpleDrawConfigurationTest extends SimpleTest {
             'Center column placement should favor middle positions for compound value'
         );
     }
+    
+    /**
+     * Test the specific bug scenario: [1,5] vs [2,5] vs [5,4] super wild placement
+     * This test ensures the algorithm correctly prioritizes Slingo completion over proximity scores
+     */
+    public function testSuperWildPlacementBugScenario() {
+        // Board state from the bug report: [[1,1],[2,2],[2,3],[2,4],[3,2],[3,3],[4,2],[5,1],[5,2],[5,3],[5,5],[4,5],[3,5]]
+        $testNumbers = [
+            [1, 16, 31, 46, 61],
+            [2, 17, 32, 47, 62],
+            [3, 18, 33, 48, 63],
+            [4, 19, 34, 49, 64],
+            [5, 20, 35, 50, 65]
+        ];
+        $bugBoard = new SlingoBoard($testNumbers);
+        $bugBoard->setCoveredPositions([
+            [0,0], [1,1], [1,2], [1,3], [2,1], [2,2], [3,1], 
+            [4,0], [4,1], [4,2], [4,4], [3,4], [2,4]
+        ]);
+        
+        $config = new DrawConfiguration();
+        $config->addRow(['none', 'none', 'none', 'none', 'super_wild']); // Column 5 super wild
+        
+        $placements = $config->getOptimalWildPlacements($bugBoard);
+        
+        $this->assertCount(1, $placements, 'Should have one placement recommendation');
+        
+        $superWildPlacements = $placements[0]['super_wild_placements'];
+        $this->assertCount(1, $superWildPlacements, 'Should place exactly one super wild');
+        
+        $placement = $superWildPlacements[0];
+        
+        // The algorithm should choose either [1,5] or [5,4], NOT [2,5]
+        // [1,5] completes anti-diagonal, [5,4] completes row 5, [2,5] completes nothing
+        $validPositions = [
+            ['row' => 1, 'column' => 5], // Completes anti-diagonal
+            ['row' => 5, 'column' => 4]  // Completes row 5
+        ];
+        
+        $isValidPosition = false;
+        foreach ($validPositions as $validPos) {
+            if ($placement['row'] === $validPos['row'] && $placement['column'] === $validPos['column']) {
+                $isValidPosition = true;
+                break;
+            }
+        }
+        
+        $this->assertTrue($isValidPosition, 
+            'Should choose [1,5] (anti-diagonal) or [5,4] (row 5), not [2,5]. ' .
+            'Got: [' . $placement['row'] . ',' . $placement['column'] . ']');
+        
+        // Should have high score due to Slingo completion
+        $this->assertGreaterThan(1000000, $placements[0]['expected_score'], 
+            'Should have very high score due to Slingo completion priority');
+        
+        $this->assertStringContains('complet', strtolower($placements[0]['reasoning']), 
+            'Reasoning should mention Slingo completion');
+    }
+    
+    /**
+     * Test Slingo completion detection accuracy for specific positions
+     */
+    public function testSlingoCompletionDetectionAccuracy() {
+        $testNumbers = [
+            [1, 16, 31, 46, 61],
+            [2, 17, 32, 47, 62],
+            [3, 18, 33, 48, 63],
+            [4, 19, 34, 49, 64],
+            [5, 20, 35, 50, 65]
+        ];
+        $board = new SlingoBoard($testNumbers);
+        $board->setCoveredPositions([
+            [0,0], [1,1], [1,2], [1,3], [2,1], [2,2], [3,1], 
+            [4,0], [4,1], [4,2], [4,4], [3,4], [2,4]
+        ]);
+        
+        $config = new DrawConfiguration();
+        
+        // Use reflection to test private methods
+        $reflection = new ReflectionClass($config);
+        $countMethod = $reflection->getMethod('countCompletedSlingos');
+        $countMethod->setAccessible(true);
+        
+        // Test [1,5] - should complete anti-diagonal
+        $wildPlacements1 = [];
+        $superWildPlacements1 = [['row' => 1, 'column' => 5]];
+        $slingos1 = $countMethod->invoke($config, $board, $wildPlacements1, $superWildPlacements1);
+        $this->assertEquals(1, $slingos1, '[1,5] should complete 1 Slingo (anti-diagonal)');
+        
+        // Test [2,5] - should complete nothing
+        $wildPlacements2 = [];
+        $superWildPlacements2 = [['row' => 2, 'column' => 5]];
+        $slingos2 = $countMethod->invoke($config, $board, $wildPlacements2, $superWildPlacements2);
+        $this->assertEquals(0, $slingos2, '[2,5] should complete 0 Slingos');
+        
+        // Test [5,4] - should complete row 5
+        $wildPlacements3 = [];
+        $superWildPlacements3 = [['row' => 5, 'column' => 4]];
+        $slingos3 = $countMethod->invoke($config, $board, $wildPlacements3, $superWildPlacements3);
+        $this->assertEquals(1, $slingos3, '[5,4] should complete 1 Slingo (row 5)');
+    }
+    
+    /**
+     * Test that proximity scoring doesn't override Slingo completion priority
+     */
+    public function testProximityVsSlingoCompletionPriority() {
+        $testNumbers = [
+            [1, 16, 31, 46, 61],
+            [2, 17, 32, 47, 62],
+            [3, 18, 33, 48, 63],
+            [4, 19, 34, 49, 64],
+            [5, 20, 35, 50, 65]
+        ];
+        $board = new SlingoBoard($testNumbers);
+        $board->setCoveredPositions([
+            [0,0], [1,1], [1,2], [1,3], [2,1], [2,2], [3,1], 
+            [4,0], [4,1], [4,2], [4,4], [3,4], [2,4]
+        ]);
+        
+        $config = new DrawConfiguration();
+        
+        // Use reflection to test private methods
+        $reflection = new ReflectionClass($config);
+        $evaluateMethod = $reflection->getMethod('evaluatePlacementWithPriority');
+        $evaluateMethod->setAccessible(true);
+        
+        // Test [1,5] - completes Slingo, should have high score
+        $combination1 = [
+            'wild_placements' => [],
+            'super_wild_placements' => [['row' => 1, 'column' => 5]]
+        ];
+        $score1 = $evaluateMethod->invoke($config, $board, $combination1);
+        $this->assertGreaterThan(1000000, $score1, '[1,5] should have very high score due to Slingo completion');
+        
+        // Test [2,5] - doesn't complete Slingo, should have lower score
+        $combination2 = [
+            'wild_placements' => [],
+            'super_wild_placements' => [['row' => 2, 'column' => 5]]
+        ];
+        $score2 = $evaluateMethod->invoke($config, $board, $combination2);
+        $this->assertLessThan(1000000, $score2, '[2,5] should have lower score (no Slingo completion)');
+        
+        // Test [5,4] - completes Slingo, should have high score
+        $combination3 = [
+            'wild_placements' => [],
+            'super_wild_placements' => [['row' => 5, 'column' => 4]]
+        ];
+        $score3 = $evaluateMethod->invoke($config, $board, $combination3);
+        $this->assertGreaterThan(1000000, $score3, '[5,4] should have very high score due to Slingo completion');
+        
+        // Slingo-completing positions should always beat non-completing positions
+        $this->assertGreaterThan($score2, $score1, '[1,5] (completes Slingo) should beat [2,5] (no completion)');
+        $this->assertGreaterThan($score2, $score3, '[5,4] (completes Slingo) should beat [2,5] (no completion)');
+    }
+    
+    /**
+     * Test diagonal completion priority over row completion
+     */
+    public function testDiagonalPriorityOverRowCompletion() {
+        $testNumbers = [
+            [1, 16, 31, 46, 61],
+            [2, 17, 32, 47, 62],
+            [3, 18, 33, 48, 63],
+            [4, 19, 34, 49, 64],
+            [5, 20, 35, 50, 65]
+        ];
+        $board = new SlingoBoard($testNumbers);
+        $board->setCoveredPositions([
+            [0,0], [1,1], [1,2], [1,3], [2,1], [2,2], [3,1], 
+            [4,0], [4,1], [4,2], [4,4], [3,4], [2,4]
+        ]);
+        
+        $config = new DrawConfiguration();
+        
+        // Use reflection to test private methods
+        $reflection = new ReflectionClass($config);
+        $evaluateMethod = $reflection->getMethod('evaluatePlacementWithPriority');
+        $evaluateMethod->setAccessible(true);
+        
+        // Test [1,5] - completes anti-diagonal
+        $combination1 = [
+            'wild_placements' => [],
+            'super_wild_placements' => [['row' => 1, 'column' => 5]]
+        ];
+        $score1 = $evaluateMethod->invoke($config, $board, $combination1);
+        
+        // Test [5,4] - completes row 5
+        $combination2 = [
+            'wild_placements' => [],
+            'super_wild_placements' => [['row' => 5, 'column' => 4]]
+        ];
+        $score2 = $evaluateMethod->invoke($config, $board, $combination2);
+        
+        // Both complete 1 Slingo, but diagonal should get extra bonus
+        $this->assertGreaterThan($score2, $score1, 
+            '[1,5] (diagonal completion) should score higher than [5,4] (row completion) due to diagonal bonus');
+    }
+    
+    /**
+     * Test that the algorithm correctly identifies when positions don't complete Slingos
+     */
+    public function testNonSlingoCompletionDetection() {
+        $testNumbers = [
+            [1, 16, 31, 46, 61],
+            [2, 17, 32, 47, 62],
+            [3, 18, 33, 48, 63],
+            [4, 19, 34, 49, 64],
+            [5, 20, 35, 50, 65]
+        ];
+        $board = new SlingoBoard($testNumbers);
+        $board->setCoveredPositions([
+            [0,0], [1,1], [1,2], [1,3], [2,1], [2,2], [3,1], 
+            [4,0], [4,1], [4,2], [4,4], [3,4], [2,4]
+        ]);
+        
+        $config = new DrawConfiguration();
+        
+        // Use reflection to test private methods
+        $reflection = new ReflectionClass($config);
+        $rowMethod = $reflection->getMethod('wouldCompleteRowWithPlacements');
+        $rowMethod->setAccessible(true);
+        
+        // Test [2,5] - should NOT complete row 2
+        $wildPlacements = [];
+        $superWildPlacements = [['row' => 2, 'column' => 5]];
+        $row2Complete = $rowMethod->invoke($config, $board, 1, $wildPlacements, $superWildPlacements); // Row 2 (0-based)
+        $this->assertFalse($row2Complete, '[2,5] should NOT complete row 2 (only 4 total, not 5)');
+        
+        // Manually verify row 2 coverage
+        $row2Covered = 0;
+        for ($col = 0; $col < 5; $col++) {
+            if ($board->isCovered(1, $col)) {
+                $row2Covered++;
+            }
+        }
+        $this->assertEquals(3, $row2Covered, 'Row 2 should have 3 covered positions');
+        $this->assertEquals(4, $row2Covered + 1, 'Row 2 with wild should have 4 total (not complete)');
+    }
 }
 ?>

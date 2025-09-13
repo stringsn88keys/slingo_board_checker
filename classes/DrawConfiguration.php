@@ -467,7 +467,7 @@ class DrawConfiguration {
         // 🎯 Priority 1: Complete Slingos (lines) for points/bonuses
         $completedSlingos = $this->countCompletedSlingos($board, $wildPlacements, $superWildPlacements);
         if ($completedSlingos > 0) {
-            $score += $completedSlingos * 50000; // Highest priority
+            $score += $completedSlingos * 1000000; // Much higher priority to ensure Slingo completion always wins
             
             // Extra bonus for diagonal completions (contribute to multiple Slingos)
             $diagonalSlingos = $this->countCompletedDiagonalSlingos($board, $wildPlacements, $superWildPlacements);
@@ -477,10 +477,13 @@ class DrawConfiguration {
             $superWildsUsedForCompletion = $this->countSuperWildsUsedForCompletion($board, $wildPlacements, $superWildPlacements);
             $score += $superWildsUsedForCompletion * 5000;
             
+            // If multiple positions complete Slingos, prefer the first one (deterministic)
+            $score += $this->calculatePositionPriority($wildPlacements, $superWildPlacements);
+            
             return $score;
         }
         
-        // 🎯 Priority 2: Target rows/columns close to completion
+        // 🎯 Priority 2: Target rows/columns close to completion (only if no Slingos completed)
         $proximityScore = $this->calculateProximityToCompletionScore($board, $wildPlacements, $superWildPlacements);
         $score += $proximityScore;
         
@@ -1286,7 +1289,7 @@ class DrawConfiguration {
                 $coveredCount++;
             }
         }
-        return $coveredCount >= 4; // 4 covered + 1 wild = complete Slingo
+        return $coveredCount === 4; // Exactly 4 covered + 1 wild = complete Slingo
     }
     
     /**
@@ -1351,7 +1354,7 @@ class DrawConfiguration {
                 $coveredCount++;
             }
         }
-        return $coveredCount >= 4; // 4 covered + 1 wild = complete Slingo
+        return $coveredCount === 4; // Exactly 4 covered + 1 wild = complete Slingo
     }
     
     /**
@@ -1366,9 +1369,8 @@ class DrawConfiguration {
                     $coveredCount++;
                 }
             }
-            // If we have 4 covered cells and we're placing at the 5th position, it completes the diagonal
-            // OR if we have 3 covered cells and we're placing at the 4th position, it completes the diagonal
-            if ($coveredCount >= 4) return true;
+            // If we have exactly 4 covered cells and we're placing at the 5th position, it completes the diagonal
+            if ($coveredCount === 4) return true;
         }
         
         // Check anti-diagonal
@@ -1379,9 +1381,8 @@ class DrawConfiguration {
                     $coveredCount++;
                 }
             }
-            // If we have 4 covered cells and we're placing at the 5th position, it completes the diagonal
-            // OR if we have 3 covered cells and we're placing at the 4th position, it completes the diagonal
-            if ($coveredCount >= 4) return true;
+            // If we have exactly 4 covered cells and we're placing at the 5th position, it completes the diagonal
+            if ($coveredCount === 4) return true;
         }
         
         return false;
@@ -1840,6 +1841,24 @@ class DrawConfiguration {
         }
         
         return $gaps;
+    }
+    
+    /**
+     * Calculate position priority for deterministic ordering
+     * Lower row/column numbers get higher priority
+     */
+    private function calculatePositionPriority($wildPlacements, $superWildPlacements) {
+        $priority = 0;
+        
+        // Give priority to positions with lower row/column numbers
+        foreach (array_merge($wildPlacements, $superWildPlacements) as $placement) {
+            $row = $placement['row'];
+            $col = $placement['column'];
+            // Lower numbers get higher priority (subtract from a large number)
+            $priority += (100 - $row) * 100 + (100 - $col);
+        }
+        
+        return $priority;
     }
     
     /**

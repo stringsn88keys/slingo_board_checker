@@ -259,9 +259,20 @@ class SlingoBoardChecker {
             
             html += '<div class="optimal-selections">';
             data.optimal_selections.forEach((selection, index) => {
+                // Convert covered positions to 1-based format for display
+                const markedPositions = Array.from(this.coveredPositions).map(pos => {
+                    const [row, col] = pos.split(',').map(Number);
+                    return `[${row + 1},${col + 1}]`;
+                }).join(',');
+                
+                
+                // Ensure we always show something, even if no positions are marked
+                const displayText = markedPositions ? `Marked as [${markedPositions}]` : 'No positions marked';
+                
                 html += `
                     <div class="optimal-selection">
                         <h3>Recommendation ${index + 1}</h3>
+                        <div class="marked-positions">${displayText}</div>
                         <div class="expected-score">Expected Score: ${selection.expected_score}</div>
                         <div class="reasoning">${selection.reasoning}</div>
                         <div class="wild-placement">
