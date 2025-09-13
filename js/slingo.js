@@ -349,6 +349,7 @@ class SlingoBoardChecker {
             this.submitAnalysis();
         });
     }
+
 }
 
 // Initialize the application when DOM is loaded
