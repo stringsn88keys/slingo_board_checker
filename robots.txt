@@ -1,0 +1,22 @@
+User-agent: *
+Allow: /
+
+# Allow all search engines to crawl the main pages
+Allow: /index.php
+Allow: /css/
+Allow: /js/
+Allow: /images/
+
+# Disallow crawling of API endpoints and config files
+Disallow: /api/
+Disallow: /config/
+Disallow: /classes/
+Disallow: /tests/
+Disallow: /.git/
+Disallow: /.cursor/
+
+# Sitemap location
+Sitemap: https://slingoboardchecker.com/sitemap.xml
+
+# Crawl delay (optional - be respectful to servers)
+Crawl-delay: 1

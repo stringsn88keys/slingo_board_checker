@@ -322,18 +322,27 @@ class SlingoBoardChecker {
     // Bind event listeners
     bindEvents() {
         // Board reset
-        document.getElementById('reset-board').addEventListener('click', () => {
-            this.resetBoard();
-        });
+        const resetBoard = document.getElementById('reset-board');
+        if (resetBoard) {
+            resetBoard.addEventListener('click', () => {
+                this.resetBoard();
+            });
+        }
 
         // Draw row controls
-        document.getElementById('add-row').addEventListener('click', () => {
-            this.addDrawRow();
-        });
+        const addRow = document.getElementById('add-row');
+        if (addRow) {
+            addRow.addEventListener('click', () => {
+                this.addDrawRow();
+            });
+        }
 
-        document.getElementById('remove-row').addEventListener('click', () => {
-            this.removeDrawRow();
-        });
+        const removeRow = document.getElementById('remove-row');
+        if (removeRow) {
+            removeRow.addEventListener('click', () => {
+                this.removeDrawRow();
+            });
+        }
 
         // Draw option changes
         document.addEventListener('change', (e) => {
@@ -345,9 +354,12 @@ class SlingoBoardChecker {
         });
 
         // Submit analysis
-        document.getElementById('submit-analysis').addEventListener('click', () => {
-            this.submitAnalysis();
-        });
+        const submitAnalysis = document.getElementById('submit-analysis');
+        if (submitAnalysis) {
+            submitAnalysis.addEventListener('click', () => {
+                this.submitAnalysis();
+            });
+        }
     }
 
 }
